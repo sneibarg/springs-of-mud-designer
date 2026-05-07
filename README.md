@@ -18,7 +18,9 @@ npm install
 npm run dev
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:8080`, matching the Java backend's `/api/v1/*` controllers. Game data is read from `/api/v1/game`. Set `VITE_SOM_API_BASE_URL` when the API is hosted somewhere else.
+The designer defaults to `http://dragon:9080`, matching the current Java backend environment. The Settings section in the app can change the API server at runtime and persists the value in browser storage.
+
+The Vite dev server proxies `/api` to `http://dragon:9080` so browser requests avoid CORS issues during local development. Game data is read from `/api/v1/game`. Set `VITE_SOM_API_BASE_URL` when you want a different build-time default.
 
 ```bash
 npm run dev

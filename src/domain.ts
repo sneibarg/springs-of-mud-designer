@@ -56,6 +56,51 @@ export type ApiHealth = {
   detail: string;
 };
 
+export type AreaView = {
+  id?: string;
+  author: string;
+  name: string;
+  vnum: string;
+  suggestedLevelRange: string;
+  rooms: string[];
+  mobiles: string[];
+  objects: string[];
+  shops: string[];
+  resets: string[];
+  specials: string[];
+};
+
+export type RoomView = {
+  id?: string;
+  areaId: string;
+  vnum: string;
+  name: string;
+  description: string;
+  extraDescription: string;
+  pvp: boolean;
+  spawn: boolean;
+  spawnTimer: number;
+  spawnTime: number;
+  teleDelay: number;
+  roomFlags: number;
+  sectorType: number;
+  exits: string[];
+  mobiles: Record<string, string>;
+};
+
+export type ExitView = {
+  direction: number;
+  description: string;
+  keyword: string;
+  exit_flags: number;
+  key: number;
+  to_room_vnum: number;
+  to_room_id: string;
+  room_id: string;
+  parseError?: string;
+  raw: string;
+};
+
 export const iconByKind: Record<FeatureKind, LucideIcon> = {
   skills: Swords,
   spells: Sparkles,
