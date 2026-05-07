@@ -1,40 +1,62 @@
 import type { ApiHealth, ApiResource } from "./domain";
 
+export const DESIGNER_SETTINGS_STORAGE_KEY = "som-designer-settings";
 export const API_BASE_URL_STORAGE_KEY = "som-designer-api-base-url";
 export const API_PROXY_ENABLED_STORAGE_KEY = "som-designer-api-proxy-enabled";
-export const DEFAULT_API_BASE_URL = import.meta.env.VITE_SOM_API_BASE_URL ?? "http://dragon:9080";
+export const DEFAULT_API_BASE_URL = "http://localhost:9080";
 export const DEFAULT_API_PROXY_ENABLED = import.meta.env.DEV;
+
+export type DesignerSettings = {
+  apiBaseUrl: string;
+  useDevProxy: boolean;
+};
+
+export const DEFAULT_DESIGNER_SETTINGS: DesignerSettings = {
+  apiBaseUrl: DEFAULT_API_BASE_URL,
+  useDevProxy: DEFAULT_API_PROXY_ENABLED,
+};
 
 export function normalizeApiBaseUrl(value: string) {
   return value.trim().replace(/\/+$/, "");
 }
 
+export async function loadDesignerSettings(): Promise<DesignerSettings> {
+  try {
+    const response = await fetch("/designer/settings");
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return normalizeDesignerSettings((await response.json()) as Partial<DesignerSettings>);
+  } catch {
+    return DEFAULT_DESIGNER_SETTINGS;
+  }
+}
+
+export async function saveDesignerSettings(settings: DesignerSettings) {
+  const normalizedSettings = normalizeDesignerSettings(settings);
+  const response = await fetch("/designer/settings", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(normalizedSettings),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Unable to save designer settings: HTTP ${response.status}`);
+  }
+
+  return normalizeDesignerSettings((await response.json()) as Partial<DesignerSettings>);
+}
+
 export function readSavedApiBaseUrl() {
-  return (
-    normalizeApiBaseUrl(window.localStorage.getItem(API_BASE_URL_STORAGE_KEY) ?? "") ||
-    DEFAULT_API_BASE_URL
-  );
+  return DEFAULT_DESIGNER_SETTINGS.apiBaseUrl;
 }
 
 export function readSavedApiProxyEnabled() {
-  const savedValue = window.localStorage.getItem(API_PROXY_ENABLED_STORAGE_KEY);
-
-  if (savedValue === null) {
-    return DEFAULT_API_PROXY_ENABLED;
-  }
-
-  return savedValue === "true";
-}
-
-export function saveApiBaseUrl(value: string) {
-  const normalizedValue = normalizeApiBaseUrl(value);
-  window.localStorage.setItem(API_BASE_URL_STORAGE_KEY, normalizedValue);
-  return normalizedValue;
-}
-
-export function saveApiProxyEnabled(value: boolean) {
-  window.localStorage.setItem(API_PROXY_ENABLED_STORAGE_KEY, String(value));
-  return value;
+  return DEFAULT_DESIGNER_SETTINGS.useDevProxy;
 }
 
 export function resolveFetchBaseUrl(apiBaseUrl: string, useDevProxy: boolean) {
@@ -102,4 +124,12 @@ export function buildApiUrl(apiBaseUrl: string, useDevProxy: boolean, endpoint: 
   const fetchBaseUrl = resolveFetchBaseUrl(baseUrl, useDevProxy);
 
   return `${fetchBaseUrl}${endpoint}`;
+}
+
+function normalizeDesignerSettings(settings: Partial<DesignerSettings>): DesignerSettings {
+  return {
+    apiBaseUrl: normalizeApiBaseUrl(settings.apiBaseUrl ?? "") || DEFAULT_API_BASE_URL,
+    useDevProxy:
+      typeof settings.useDevProxy === "boolean" ? settings.useDevProxy : DEFAULT_API_PROXY_ENABLED,
+  };
 }

@@ -22,14 +22,13 @@ import {
   buildApiUrl,
   buildCreateRequest,
   checkApiHealth,
+  loadDesignerSettings,
   readSavedApiBaseUrl,
   readSavedApiProxyEnabled,
-  saveApiBaseUrl,
-  saveApiProxyEnabled,
+  saveDesignerSettings,
 } from "./api";
 
 const navItems = [
-  { id: "settings" as FeatureKind, label: "Settings" },
   { id: "areas" as FeatureKind, label: "Areas" },
   { id: "rooms" as FeatureKind, label: "Rooms" },
   { id: "mobiles" as FeatureKind, label: "Mobiles" },
@@ -114,8 +113,8 @@ export function App() {
   const [roomMessage, setRoomMessage] = useState("");
 
   const activeResource = useMemo(
-    () => apiResources.find((resource) => resource.kind === activeKind) ?? apiResources[0],
-    [activeKind],
+      () => apiResources.find((resource) => resource.kind === activeKind) ?? apiResources[0],
+      [activeKind],
   );
   const ActiveResourceIcon = activeResource.icon;
   const readyEditorCount = apiResources.filter((resource) => resource.status === "Ready").length;
@@ -134,6 +133,14 @@ export function App() {
   );
 
   useEffect(() => {
+    loadDesignerSettings().then((settings) => {
+      setApiBaseUrl(settings.apiBaseUrl);
+      setApiBaseUrlInput(settings.apiBaseUrl);
+      setUseDevProxy(settings.useDevProxy);
+    });
+  }, []);
+
+  useEffect(() => {
     setHealth({
       state: "checking",
       detail: `Checking ${apiBaseUrl}`,
@@ -145,26 +152,61 @@ export function App() {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function applyApiBaseUrl() {
-    const nextBaseUrl = saveApiBaseUrl(apiBaseUrlInput);
-    setApiBaseUrl(nextBaseUrl);
-    setApiBaseUrlInput(nextBaseUrl);
+  async function applyApiBaseUrl() {
+    try {
+      const settings = await saveDesignerSettings({
+        apiBaseUrl: apiBaseUrlInput,
+        useDevProxy,
+      });
+      setApiBaseUrl(settings.apiBaseUrl);
+      setApiBaseUrlInput(settings.apiBaseUrl);
+      setUseDevProxy(settings.useDevProxy);
+    } catch (error) {
+      setHealth({
+        state: "offline",
+        detail: error instanceof Error ? error.message : "Unable to save designer settings.",
+      });
+    }
   }
 
-  function testApiBaseUrl(value: string) {
-    const nextBaseUrl = saveApiBaseUrl(value);
-    setApiBaseUrl(nextBaseUrl);
-    setApiBaseUrlInput(nextBaseUrl);
-    setHealth({
-      state: "checking",
-      detail: `Checking ${nextBaseUrl}`,
-    });
-    checkApiHealth(nextBaseUrl, useDevProxy).then(setHealth);
+  async function testApiBaseUrl(value: string) {
+    try {
+      const settings = await saveDesignerSettings({
+        apiBaseUrl: value,
+        useDevProxy,
+      });
+      setApiBaseUrl(settings.apiBaseUrl);
+      setApiBaseUrlInput(settings.apiBaseUrl);
+      setUseDevProxy(settings.useDevProxy);
+      setHealth({
+        state: "checking",
+        detail: `Checking ${settings.apiBaseUrl}`,
+      });
+      checkApiHealth(settings.apiBaseUrl, settings.useDevProxy).then(setHealth);
+    } catch (error) {
+      setHealth({
+        state: "offline",
+        detail: error instanceof Error ? error.message : "Unable to save designer settings.",
+      });
+    }
   }
 
-  function toggleDevProxy(value: boolean) {
-    saveApiProxyEnabled(value);
+  async function toggleDevProxy(value: boolean) {
     setUseDevProxy(value);
+    try {
+      const settings = await saveDesignerSettings({
+        apiBaseUrl,
+        useDevProxy: value,
+      });
+      setApiBaseUrl(settings.apiBaseUrl);
+      setApiBaseUrlInput(settings.apiBaseUrl);
+      setUseDevProxy(settings.useDevProxy);
+    } catch (error) {
+      setHealth({
+        state: "offline",
+        detail: error instanceof Error ? error.message : "Unable to save designer settings.",
+      });
+    }
   }
 
   const loadAreas = useCallback(async () => {
@@ -232,37 +274,37 @@ export function App() {
   }, [apiBaseUrl, selectedRoomId, useDevProxy]);
 
   const loadRoomsForArea = useCallback(
-    async (areaId: string) => {
-      if (!areaId) {
-        setAreaRooms([]);
-        return;
-      }
-
-      setAreaRoomsStatus("loading");
-
-      try {
-        const response = await fetch(
-          buildApiUrl(apiBaseUrl, useDevProxy, `/api/v1/rooms/area/${areaId}`),
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+      async (areaId: string) => {
+        if (!areaId) {
+          setAreaRooms([]);
+          return;
         }
 
-        const loadedRooms = ((await response.json()) as RoomView[]).map(normalizeRoom);
-        setAreaRooms(loadedRooms);
-      } catch (error) {
-        setAreaRooms([]);
-        setAreaMessage(
-          error instanceof Error
-            ? `Could not load area rooms: ${error.message}`
-            : "Could not load area rooms.",
-        );
-      } finally {
-        setAreaRoomsStatus("idle");
-      }
-    },
-    [apiBaseUrl, useDevProxy],
+        setAreaRoomsStatus("loading");
+
+        try {
+          const response = await fetch(
+              buildApiUrl(apiBaseUrl, useDevProxy, `/api/v1/rooms/area/${areaId}`),
+          );
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const loadedRooms = ((await response.json()) as RoomView[]).map(normalizeRoom);
+          setAreaRooms(loadedRooms);
+        } catch (error) {
+          setAreaRooms([]);
+          setAreaMessage(
+              error instanceof Error
+                  ? `Could not load area rooms: ${error.message}`
+                  : "Could not load area rooms.",
+          );
+        } finally {
+          setAreaRoomsStatus("idle");
+        }
+      },
+      [apiBaseUrl, useDevProxy],
   );
 
   useEffect(() => {
@@ -462,8 +504,8 @@ export function App() {
     }
 
     const lookupEndpoint = exitView.to_room_id
-      ? `/api/v1/rooms/${exitView.to_room_id}`
-      : `/api/v1/rooms/vnum/${exitView.to_room_vnum}`;
+        ? `/api/v1/rooms/${exitView.to_room_id}`
+        : `/api/v1/rooms/vnum/${exitView.to_room_vnum}`;
 
     try {
       const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, lookupEndpoint));
@@ -479,366 +521,419 @@ export function App() {
       setRoomMessage(`Opened ${loadedRoom.name || loadedRoom.vnum}.`);
     } catch (error) {
       setRoomMessage(
-        error instanceof Error
-          ? `Could not open destination room: ${error.message}`
-          : "Could not open destination room.",
+          error instanceof Error
+              ? `Could not open destination room: ${error.message}`
+              : "Could not open destination room.",
       );
     }
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-row">
-          <div className="brand-mark">SoM</div>
-          <div>
-            <h1>Designer</h1>
-            <span>Game feature workbench</span>
-          </div>
-        </div>
-
-        <nav className="main-nav" aria-label="Feature sections">
-          {navItems.map((item) => {
-            const resource = apiResources.find((entry) => entry.kind === item.id);
-            const Icon = resource?.icon ?? CircleDashed;
-            const selected = item.id === activeKind;
-
-            return (
-              <button
-                className={selected ? "nav-button active" : "nav-button"}
-                key={item.id}
-                onClick={() => {
-                  setActiveKind(item.id);
-                  updateDraft("kind", item.id);
-                }}
-                type="button"
-              >
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="sidebar-panel">
-          <div className={`status-dot ${health.state}`} />
-          <div>
-            <strong>{health.state === "online" ? "API online" : "Draft mode"}</strong>
-            <span>{health.detail}</span>
-          </div>
-        </div>
-      </aside>
-
-      <main className="workspace">
-        <header className="topbar">
-          <button className="icon-button mobile-menu" type="button" aria-label="Open navigation">
-            <Menu size={20} />
-          </button>
-          <label className="search-box">
-            <Search size={18} />
-            <input placeholder="Search features, vnums, areas, commands" />
-          </label>
-          <button className="ghost-button" type="button">
-            <FileJson size={18} />
-            Import JSON
-          </button>
-          <button className="primary-button" type="button">
-            <Plus size={18} />
-            New Draft
-          </button>
-        </header>
-
-        <section className="overview-band">
-          <div className="overview-copy">
-            <div className="eyebrow">
-              <Activity size={16} />
-              Persistence-backed authoring
+      <div className="app-shell">
+        <aside className="sidebar">
+          <div className="brand-row">
+            <div className="brand-mark">SoM</div>
+            <div>
+              <h1>Designer</h1>
+              <span>Game feature workbench</span>
             </div>
-            <h2>Design skills, spells, world content, and player communication in one place.</h2>
-            <p>
-              This starter maps the React UI to the Java modulith resources and keeps drafts shaped
-              around the Python server concepts: registries, handlers, flags, rooms, and commands.
-            </p>
           </div>
-          <div className="overview-metrics" aria-label="Designer coverage">
-            <Metric label="API resources" value={apiResources.length.toString()} />
-            <Metric label="Ready editors" value={readyEditorCount.toString()} />
-            <Metric label="Draft queue" value={workQueue.length.toString()} />
-          </div>
-        </section>
 
-        <section className="content-grid">
-          <div className="editor-surface">
-            <div className="section-heading">
-              <div>
-                <span>{activeResource.endpoint}</span>
-                <h3>{activeResource.label} Editor</h3>
-              </div>
-              <span className="pill">{activeResource.status}</span>
-            </div>
+          <nav className="main-nav" aria-label="Feature sections">
+            {navItems.map((item) => {
+              const resource = apiResources.find((entry) => entry.kind === item.id);
+              const Icon = resource?.icon ?? CircleDashed;
+              const selected = item.id === activeKind;
 
-            {activeKind === "settings" ? (
-              <div className="settings-panel">
-                <div className="resource-summary">
-                  <ServerCog size={22} />
-                  <p>
-                    Point the designer at the Java persistence server. This is stored in your
-                    browser and used for health checks and API request previews.
-                  </p>
-                </div>
-                <div className="api-settings-form">
-                  <label>
-                    API Server
-                    <input
-                      value={apiBaseUrlInput}
-                      onChange={(event) => setApiBaseUrlInput(event.target.value)}
-                      placeholder="http://dragon:9080"
-                    />
-                  </label>
-                  <button className="primary-button" type="button" onClick={applyApiBaseUrl}>
-                    <Save size={18} />
-                    Save Server
-                  </button>
+              return (
                   <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => testApiBaseUrl(apiBaseUrlInput)}
-                  >
-                    <RotateCw size={18} />
-                    Test
-                  </button>
-                </div>
-                <label className="proxy-toggle">
-                  <input
-                    type="checkbox"
-                    checked={useDevProxy}
-                    onChange={(event) => toggleDevProxy(event.target.checked)}
-                  />
-                  <span>Use Vite dev proxy for browser requests</span>
-                </label>
-                <div className="settings-current">
-                  <strong>Active server</strong>
-                  <code>{apiBaseUrl}</code>
-                </div>
-              </div>
-            ) : null}
-
-            {activeKind === "areas" ? (
-              <AreaDesigner
-                areaDraft={areaDraft}
-                areaMessage={areaMessage}
-                areaRooms={areaRooms}
-                areaRoomsStatus={areaRoomsStatus}
-                areaStatus={areaStatus}
-                areas={areas}
-                onCreateRoomForArea={(areaId) => openNewRoomModal(areaId)}
-                onCreateNew={() => selectArea("new")}
-                onLoadAreas={loadAreas}
-                onOpenRoom={(room) => {
-                  setActiveKind("rooms");
-                  setRooms((currentRooms) => mergeRooms(currentRooms, areaRooms));
-                  setRoomDraft(normalizeRoom(room));
-                  setSelectedRoomId(room.id ?? "new");
-                }}
-                onSaveArea={saveArea}
-                onSelectArea={selectArea}
-                onUpdateAreaDraft={updateAreaDraft}
-                selectedAreaId={selectedAreaId}
-              />
-            ) : null}
-
-            {activeKind === "rooms" ? (
-              <RoomDesigner
-                onCreateNew={() => openNewRoomModal()}
-                onLoadRooms={loadRooms}
-                onSaveRoom={saveRoom}
-                onSelectRoom={selectRoom}
-                onBrowseToExitDestination={browseToExitDestination}
-                onUpdateRoomDraft={updateRoomDraft}
-                roomDraft={roomDraft}
-                roomMessage={roomMessage}
-                roomStatus={roomStatus}
-                rooms={rooms}
-                selectedRoomId={selectedRoomId}
-              />
-            ) : null}
-
-            {activeKind !== "areas" && activeKind !== "rooms" ? (
-              <>
-                <div className="resource-summary">
-                  <ActiveResourceIcon size={22} />
-                  <p>{activeResource.summary}</p>
-                </div>
-
-                <form className="draft-form">
-                  <label>
-                    Name
-                    <input
-                      value={draft.name}
-                      onChange={(event) => updateDraft("name", event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Feature Kind
-                    <select
-                      value={draft.kind}
-                      onChange={(event) => {
-                        const nextKind = event.target.value as FeatureKind;
-                        updateDraft("kind", nextKind);
-                        setActiveKind(nextKind);
+                      className={selected ? "nav-button active" : "nav-button"}
+                      key={item.id}
+                      onClick={() => {
+                        setActiveKind(item.id);
+                        updateDraft("kind", item.id);
                       }}
-                    >
-                      {apiResources.map((resource) => (
-                        <option key={resource.kind} value={resource.kind}>
-                          {resource.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Area or Domain
-                    <input
-                      value={draft.areaId}
-                      onChange={(event) => updateDraft("areaId", event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Target
-                    <input
-                      value={draft.target}
-                      onChange={(event) => updateDraft("target", event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Level
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={draft.level}
-                      onChange={(event) => updateDraft("level", Number(event.target.value))}
-                    />
-                  </label>
-                  <label className="wide-field">
-                    Design Notes
-                    <textarea
-                      value={draft.notes}
-                      onChange={(event) => updateDraft("notes", event.target.value)}
-                      rows={5}
-                    />
-                  </label>
-                </form>
+                      type="button"
+                  >
+                    <Icon size={18}/>
+                    <span>{item.label}</span>
+                  </button>
+              );
+            })}
+          </nav>
 
-                <div className="field-list">
-                  {activeResource.fields.map((field) => (
-                    <span key={field}>{field}</span>
-                  ))}
-                </div>
+          <div className="sidebar-panel">
+            <div className={`status-dot ${health.state}`}/>
+            <div>
+              <strong>{health.state === "online" ? "API online" : "Draft mode"}</strong>
+              <span>{health.detail}</span>
+            </div>
+          </div>
+        </aside>
 
-                <div className="editor-actions">
-                  <button className="secondary-button" type="button">
-                    <Code2 size={18} />
-                    Validate Shape
+        <main className="workspace">
+          <header className={activeKind === "settings" ? "topbar settings-topbar" : "topbar"}>
+            {activeKind !== "settings" ? (
+                <>
+                  <button className="icon-button mobile-menu" type="button" aria-label="Open navigation">
+                    <Menu size={20}/>
+                  </button>
+                  <label className="search-box">
+                    <Search size={18}/>
+                    <input placeholder="Search features, vnums, areas, commands"/>
+                  </label>
+                  <button className="ghost-button" type="button">
+                    <FileJson size={18}/>
+                    Import JSON
                   </button>
                   <button className="primary-button" type="button">
-                    <Save size={18} />
-                    Save Draft
+                    <Plus size={18}/>
+                    New Draft
                   </button>
-                </div>
+                </>
+            ) : (
+                <span/>
+            )}
+            <button
+                className={activeKind === "settings" ? "settings-button active" : "settings-button"}
+                type="button"
+                onClick={() => setActiveKind("settings")}
+            >
+              <ServerCog size={18}/>
+              Settings
+            </button>
+          </header>
+
+          {activeKind === "settings" ? (
+              <section className="settings-only">
+                <SettingsPanel
+                    apiBaseUrl={apiBaseUrl}
+                    apiBaseUrlInput={apiBaseUrlInput}
+                    onApplyApiBaseUrl={applyApiBaseUrl}
+                    onTestApiBaseUrl={() => testApiBaseUrl(apiBaseUrlInput)}
+                    onToggleDevProxy={toggleDevProxy}
+                    onUpdateApiBaseUrlInput={setApiBaseUrlInput}
+                    useDevProxy={useDevProxy}
+                />
+              </section>
+          ) : (
+              <>
+                <section className="overview-band">
+                  <div className="overview-copy">
+                    <div className="eyebrow">
+                      <Activity size={16}/>
+                      Persistence-backed authoring
+                    </div>
+                    <h2>Design skills, spells, world content, and player communication in one place.</h2>
+                    <p>
+                      This starter maps the React UI to the Java modulith resources and keeps drafts shaped
+                      around the Python server concepts: registries, handlers, flags, rooms, and commands.
+                    </p>
+                  </div>
+                  <div className="overview-metrics" aria-label="Designer coverage">
+                    <Metric label="API resources" value={apiResources.length.toString()}/>
+                    <Metric label="Ready editors" value={readyEditorCount.toString()}/>
+                    <Metric label="Draft queue" value={workQueue.length.toString()}/>
+                  </div>
+                </section>
+
+                <section className="content-grid">
+                  <div className="editor-surface">
+                    <div className="section-heading">
+                      <div>
+                        <span>{activeResource.endpoint}</span>
+                        <h3>{activeResource.label} Editor</h3>
+                      </div>
+                      <span className="pill">{activeResource.status}</span>
+                    </div>
+
+                    {activeKind === "areas" ? (
+                        <AreaDesigner
+                            areaDraft={areaDraft}
+                            areaMessage={areaMessage}
+                            areaRooms={areaRooms}
+                            areaRoomsStatus={areaRoomsStatus}
+                            areaStatus={areaStatus}
+                            areas={areas}
+                            onCreateRoomForArea={(areaId) => openNewRoomModal(areaId)}
+                            onCreateNew={() => selectArea("new")}
+                            onLoadAreas={loadAreas}
+                            onOpenRoom={(room) => {
+                              setActiveKind("rooms");
+                              setRooms((currentRooms) => mergeRooms(currentRooms, areaRooms));
+                              setRoomDraft(normalizeRoom(room));
+                              setSelectedRoomId(room.id ?? "new");
+                            }}
+                            onSaveArea={saveArea}
+                            onSelectArea={selectArea}
+                            onUpdateAreaDraft={updateAreaDraft}
+                            selectedAreaId={selectedAreaId}
+                        />
+                    ) : null}
+
+                    {activeKind === "rooms" ? (
+                        <RoomDesigner
+                            onCreateNew={() => openNewRoomModal()}
+                            onLoadRooms={loadRooms}
+                            onSaveRoom={saveRoom}
+                            onSelectRoom={selectRoom}
+                            onBrowseToExitDestination={browseToExitDestination}
+                            onUpdateRoomDraft={updateRoomDraft}
+                            roomDraft={roomDraft}
+                            roomMessage={roomMessage}
+                            roomStatus={roomStatus}
+                            rooms={rooms}
+                            selectedRoomId={selectedRoomId}
+                        />
+                    ) : null}
+
+                    {activeKind !== "areas" && activeKind !== "rooms" ? (
+                        <>
+                          <div className="resource-summary">
+                            <ActiveResourceIcon size={22}/>
+                            <p>{activeResource.summary}</p>
+                          </div>
+
+                          <form className="draft-form">
+                            <label>
+                              Name
+                              <input
+                                  value={draft.name}
+                                  onChange={(event) => updateDraft("name", event.target.value)}
+                              />
+                            </label>
+                            <label>
+                              Feature Kind
+                              <select
+                                  value={draft.kind}
+                                  onChange={(event) => {
+                                    const nextKind = event.target.value as FeatureKind;
+                                    updateDraft("kind", nextKind);
+                                    setActiveKind(nextKind);
+                                  }}
+                              >
+                                {apiResources.map((resource) => (
+                                    <option key={resource.kind} value={resource.kind}>
+                                      {resource.label}
+                                    </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              Area or Domain
+                              <input
+                                  value={draft.areaId}
+                                  onChange={(event) => updateDraft("areaId", event.target.value)}
+                              />
+                            </label>
+                            <label>
+                              Target
+                              <input
+                                  value={draft.target}
+                                  onChange={(event) => updateDraft("target", event.target.value)}
+                              />
+                            </label>
+                            <label>
+                              Level
+                              <input
+                                  type="number"
+                                  min="1"
+                                  max="100"
+                                  value={draft.level}
+                                  onChange={(event) => updateDraft("level", Number(event.target.value))}
+                              />
+                            </label>
+                            <label className="wide-field">
+                              Design Notes
+                              <textarea
+                                  value={draft.notes}
+                                  onChange={(event) => updateDraft("notes", event.target.value)}
+                                  rows={5}
+                              />
+                            </label>
+                          </form>
+
+                          <div className="field-list">
+                            {activeResource.fields.map((field) => (
+                                <span key={field}>{field}</span>
+                            ))}
+                          </div>
+
+                          <div className="editor-actions">
+                            <button className="secondary-button" type="button">
+                              <Code2 size={18}/>
+                              Validate Shape
+                            </button>
+                            <button className="primary-button" type="button">
+                              <Save size={18}/>
+                              Save Draft
+                            </button>
+                          </div>
+                        </>
+                    ) : null}
+                  </div>
+
+                  <aside className="inspector">
+                    <div className="section-heading compact">
+                      <div>
+                        <span>Request Preview</span>
+                        <h3>Java API Contract</h3>
+                      </div>
+                      <DatabaseZap size={20}/>
+                    </div>
+                    <pre>{JSON.stringify(createRequest, null, 2)}</pre>
+                  </aside>
+                </section>
+                {isNewRoomModalOpen ? (
+                    <RoomCreateModal
+                        isSaving={roomStatus === "saving"}
+                        onClose={() => setIsNewRoomModalOpen(false)}
+                        onSubmit={createRoomFromModal}
+                        onUpdateRoomDraft={updateNewRoomDraft}
+                        roomDraft={newRoomDraft}
+                    />
+                ) : null}
+
+                <section className="resource-grid" aria-label="Resource coverage">
+                  {apiResources
+                      .filter((resource) => resource.kind !== "settings")
+                      .map((resource) => {
+                        const Icon = resource.icon;
+                        return (
+                            <article className="resource-card" key={resource.kind}>
+                              <div className="resource-card-header">
+                                <Icon size={20}/>
+                                <span>{resource.status}</span>
+                              </div>
+                              <h3>{resource.label}</h3>
+                              <p>{resource.summary}</p>
+                              <button type="button" onClick={() => setActiveKind(resource.kind)}>
+                                Open
+                                <ArrowRight size={16}/>
+                              </button>
+                            </article>
+                        );
+                      })}
+                </section>
+
+                <section className="queue-band">
+                  <div className="section-heading">
+                    <div>
+                      <span>Authoring Flow</span>
+                      <h3>Draft Queue</h3>
+                    </div>
+                  </div>
+                  <div className="queue-table">
+                    {workQueue.map((item) => (
+                        <div className="queue-row" key={item.id}>
+                          <CheckCircle2 size={18}/>
+                          <strong>{item.title}</strong>
+                          <span>{item.area}</span>
+                          <span>{item.owner}</span>
+                          <span className="pill muted">{item.status}</span>
+                        </div>
+                    ))}
+                  </div>
+                </section>
               </>
-            ) : null}
-          </div>
-
-          <aside className="inspector">
-            <div className="section-heading compact">
-              <div>
-                <span>Request Preview</span>
-                <h3>Java API Contract</h3>
-              </div>
-              <DatabaseZap size={20} />
-            </div>
-            <pre>{JSON.stringify(createRequest, null, 2)}</pre>
-          </aside>
-        </section>
-        {isNewRoomModalOpen ? (
-          <RoomCreateModal
-            isSaving={roomStatus === "saving"}
-            onClose={() => setIsNewRoomModalOpen(false)}
-            onSubmit={createRoomFromModal}
-            onUpdateRoomDraft={updateNewRoomDraft}
-            roomDraft={newRoomDraft}
-          />
-        ) : null}
-
-        <section className="resource-grid" aria-label="Resource coverage">
-          {apiResources.map((resource) => {
-            const Icon = resource.icon;
-            return (
-              <article className="resource-card" key={resource.kind}>
-                <div className="resource-card-header">
-                  <Icon size={20} />
-                  <span>{resource.status}</span>
-                </div>
-                <h3>{resource.label}</h3>
-                <p>{resource.summary}</p>
-                <button type="button" onClick={() => setActiveKind(resource.kind)}>
-                  Open
-                  <ArrowRight size={16} />
-                </button>
-              </article>
-            );
-          })}
-        </section>
-
-        <section className="queue-band">
-          <div className="section-heading">
-            <div>
-              <span>Authoring Flow</span>
-              <h3>Draft Queue</h3>
-            </div>
-          </div>
-          <div className="queue-table">
-            {workQueue.map((item) => (
-              <div className="queue-row" key={item.id}>
-                <CheckCircle2 size={18} />
-                <strong>{item.title}</strong>
-                <span>{item.area}</span>
-                <span>{item.owner}</span>
-                <span className="pill muted">{item.status}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      </main>
-    </div>
+          )}
+        </main>
+      </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({label, value}: { label: string; value: string }) {
   return (
-    <div className="metric">
-      <strong>{value}</strong>
-      <span>{label}</span>
-    </div>
+      <div className="metric">
+        <strong>{value}</strong>
+        <span>{label}</span>
+      </div>
+  );
+}
+
+function SettingsPanel({
+                         apiBaseUrl,
+                         apiBaseUrlInput,
+                         onApplyApiBaseUrl,
+                         onTestApiBaseUrl,
+                         onToggleDevProxy,
+                         onUpdateApiBaseUrlInput,
+                         useDevProxy,
+                       }: {
+  apiBaseUrl: string;
+  apiBaseUrlInput: string;
+  onApplyApiBaseUrl: () => void;
+  onTestApiBaseUrl: () => void;
+  onToggleDevProxy: (value: boolean) => void;
+  onUpdateApiBaseUrlInput: (value: string) => void;
+  useDevProxy: boolean;
+}) {
+  return (
+      <div className="settings-panel">
+        <div className="section-heading">
+          <div>
+            <span>Designer Settings</span>
+            <h3>API Server</h3>
+          </div>
+          <ServerCog size={22}/>
+        </div>
+        <div className="resource-summary">
+          <ServerCog size={22}/>
+          <p>
+            Point the designer at the Java persistence server. This is stored in your browser and
+            used for health checks and API request previews.
+          </p>
+        </div>
+        <div className="api-settings-form">
+          <label>
+            API Server
+            <input
+                value={apiBaseUrlInput}
+                onChange={(event) => onUpdateApiBaseUrlInput(event.target.value)}
+                placeholder="http://localhost:9080"
+            />
+          </label>
+          <button className="primary-button" type="button" onClick={onApplyApiBaseUrl}>
+            <Save size={18}/>
+            Save
+          </button>
+          <button className="secondary-button" type="button" onClick={onTestApiBaseUrl}>
+            <RotateCw size={18}/>
+            Test
+          </button>
+        </div>
+        <label className="proxy-toggle">
+          <input
+              type="checkbox"
+              checked={useDevProxy}
+              onChange={(event) => onToggleDevProxy(event.target.checked)}
+          />
+          <span>Use Vite dev proxy for browser requests</span>
+        </label>
+        <div className="settings-current">
+          <strong>Active server</strong>
+          <code>{apiBaseUrl}</code>
+        </div>
+      </div>
   );
 }
 
 function AreaDesigner({
-  areaDraft,
-  areaMessage,
-  areaRooms,
-  areaRoomsStatus,
-  areaStatus,
-  areas,
-  onCreateRoomForArea,
-  onCreateNew,
-  onLoadAreas,
-  onOpenRoom,
-  onSaveArea,
-  onSelectArea,
-  onUpdateAreaDraft,
-  selectedAreaId,
-}: {
+                        areaDraft,
+                        areaMessage,
+                        areaRooms,
+                        areaRoomsStatus,
+                        areaStatus,
+                        areas,
+                        onCreateRoomForArea,
+                        onCreateNew,
+                        onLoadAreas,
+                        onOpenRoom,
+                        onSaveArea,
+                        onSelectArea,
+                        onUpdateAreaDraft,
+                        selectedAreaId,
+                      }: {
   areaDraft: AreaView;
   areaMessage: string;
   areaRooms: RoomView[];
@@ -858,170 +953,170 @@ function AreaDesigner({
   const isLoading = areaStatus === "loading";
 
   return (
-    <div className="area-designer">
-      <div className="area-toolbar">
-        <div className="resource-summary">
-          <BookOpen size={22} />
-          <p>
-            Load existing areas from the Java API, edit their AreaView fields, or create a new
-            area document through the same `/api/v1/areas` controller.
-          </p>
-        </div>
-        <div className="area-toolbar-actions">
-          <button className="secondary-button" type="button" onClick={onLoadAreas} disabled={isLoading}>
-            <RotateCw size={18} />
-            {isLoading ? "Loading" : "Reload"}
-          </button>
-          <button className="primary-button" type="button" onClick={onCreateNew}>
-            <Plus size={18} />
-            New Area
-          </button>
-        </div>
-      </div>
-
-      <div className="area-workspace">
-        <aside className="area-list" aria-label="Existing areas">
-          <div className="area-list-heading">
-            <strong>Existing Areas</strong>
-            <span>{areas.length}</span>
+      <div className="area-designer">
+        <div className="area-toolbar">
+          <div className="resource-summary">
+            <BookOpen size={22}/>
+            <p>
+              Load existing areas from the Java API, edit their AreaView fields, or create a new
+              area document through the same `/api/v1/areas` controller.
+            </p>
           </div>
-          <button
-            className={selectedAreaId === "new" ? "area-list-item active" : "area-list-item"}
-            type="button"
-            onClick={onCreateNew}
-          >
-            <strong>New area</strong>
-            <span>Create a blank AreaDocument</span>
-          </button>
-          {areas.map((area) => (
-            <button
-              className={selectedAreaId === area.id ? "area-list-item active" : "area-list-item"}
-              key={area.id ?? area.name}
-              type="button"
-              onClick={() => onSelectArea(area.id ?? "new")}
-            >
-              <strong>{area.name || "Unnamed area"}</strong>
-              <span>{area.vnum || area.id || "No vnum"}</span>
+          <div className="area-toolbar-actions">
+            <button className="secondary-button" type="button" onClick={onLoadAreas} disabled={isLoading}>
+              <RotateCw size={18}/>
+              {isLoading ? "Loading" : "Reload"}
             </button>
-          ))}
-        </aside>
+            <button className="primary-button" type="button" onClick={onCreateNew}>
+              <Plus size={18}/>
+              New Area
+            </button>
+          </div>
+        </div>
 
-        <form className="area-form">
-          <label>
-            Id
-            <input value={areaDraft.id ?? ""} disabled placeholder="Assigned by API" />
-          </label>
-          <label>
-            Name
-            <input
-              value={areaDraft.name}
-              onChange={(event) => onUpdateAreaDraft("name", event.target.value)}
-              placeholder="Midgaard"
-            />
-          </label>
-          <label>
-            Author
-            <input
-              value={areaDraft.author}
-              onChange={(event) => onUpdateAreaDraft("author", event.target.value)}
-              placeholder="Builder name"
-            />
-          </label>
-          <label>
-            Vnum
-            <input
-              value={areaDraft.vnum}
-              onChange={(event) => onUpdateAreaDraft("vnum", event.target.value)}
-              placeholder="3000-3999"
-            />
-          </label>
-          <label className="wide-field">
-            Suggested Level Range
-            <input
-              value={areaDraft.suggestedLevelRange}
-              onChange={(event) => onUpdateAreaDraft("suggestedLevelRange", event.target.value)}
-              placeholder="1-15"
-            />
-          </label>
+        <div className="area-workspace">
+          <aside className="area-list" aria-label="Existing areas">
+            <div className="area-list-heading">
+              <strong>Existing Areas</strong>
+              <span>{areas.length}</span>
+            </div>
+            <button
+                className={selectedAreaId === "new" ? "area-list-item active" : "area-list-item"}
+                type="button"
+                onClick={onCreateNew}
+            >
+              <strong>New area</strong>
+              <span>Create a blank AreaDocument</span>
+            </button>
+            {areas.map((area) => (
+                <button
+                    className={selectedAreaId === area.id ? "area-list-item active" : "area-list-item"}
+                    key={area.id ?? area.name}
+                    type="button"
+                    onClick={() => onSelectArea(area.id ?? "new")}
+                >
+                  <strong>{area.name || "Unnamed area"}</strong>
+                  <span>{area.vnum || area.id || "No vnum"}</span>
+                </button>
+            ))}
+          </aside>
 
-          {areaListFields.map((field) => (
-            <label className="area-list-field" key={field}>
-              {startCase(field)}
-              <textarea
-                value={listToText(areaDraft[field])}
-                onChange={(event) => onUpdateAreaDraft(field, textToList(event.target.value))}
-                rows={4}
-                placeholder="One id or vnum per line"
+          <form className="area-form">
+            <label>
+              Id
+              <input value={areaDraft.id ?? ""} disabled placeholder="Assigned by API"/>
+            </label>
+            <label>
+              Name
+              <input
+                  value={areaDraft.name}
+                  onChange={(event) => onUpdateAreaDraft("name", event.target.value)}
+                  placeholder="Midgaard"
               />
             </label>
-          ))}
-        </form>
-      </div>
+            <label>
+              Author
+              <input
+                  value={areaDraft.author}
+                  onChange={(event) => onUpdateAreaDraft("author", event.target.value)}
+                  placeholder="Builder name"
+              />
+            </label>
+            <label>
+              Vnum
+              <input
+                  value={areaDraft.vnum}
+                  onChange={(event) => onUpdateAreaDraft("vnum", event.target.value)}
+                  placeholder="3000-3999"
+              />
+            </label>
+            <label className="wide-field">
+              Suggested Level Range
+              <input
+                  value={areaDraft.suggestedLevelRange}
+                  onChange={(event) => onUpdateAreaDraft("suggestedLevelRange", event.target.value)}
+                  placeholder="1-15"
+              />
+            </label>
 
-      {selectedAreaId !== "new" ? (
-        <section className="area-room-panel">
-          <div className="area-room-panel-heading">
-            <div>
-              <strong>Rooms In This Area</strong>
-              <span>
+            {areaListFields.map((field) => (
+                <label className="area-list-field" key={field}>
+                  {startCase(field)}
+                  <textarea
+                      value={listToText(areaDraft[field])}
+                      onChange={(event) => onUpdateAreaDraft(field, textToList(event.target.value))}
+                      rows={4}
+                      placeholder="One id or vnum per line"
+                  />
+                </label>
+            ))}
+          </form>
+        </div>
+
+        {selectedAreaId !== "new" ? (
+            <section className="area-room-panel">
+              <div className="area-room-panel-heading">
+                <div>
+                  <strong>Rooms In This Area</strong>
+                  <span>
                 {areaRoomsStatus === "loading" ? "Loading rooms" : `${areaRooms.length} rooms loaded`}
               </span>
-            </div>
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => onCreateRoomForArea(selectedAreaId)}
-            >
-              <Plus size={18} />
-              New Room
-            </button>
-          </div>
-          {areaRooms.length > 0 ? (
-            <div className="area-room-grid">
-              {areaRooms.map((room) => (
-                <article className="area-room-card" key={room.id ?? room.vnum ?? room.name}>
-                  <div>
-                    <strong>{room.name || "Unnamed room"}</strong>
-                    <span>{room.vnum || "No vnum"}</span>
+                </div>
+                <button
+                    className="primary-button"
+                    type="button"
+                    onClick={() => onCreateRoomForArea(selectedAreaId)}
+                >
+                  <Plus size={18}/>
+                  New Room
+                </button>
+              </div>
+              {areaRooms.length > 0 ? (
+                  <div className="area-room-grid">
+                    {areaRooms.map((room) => (
+                        <article className="area-room-card" key={room.id ?? room.vnum ?? room.name}>
+                          <div>
+                            <strong>{room.name || "Unnamed room"}</strong>
+                            <span>{room.vnum || "No vnum"}</span>
+                          </div>
+                          <p>{room.description || "No description."}</p>
+                          <button className="secondary-button" type="button" onClick={() => onOpenRoom(room)}>
+                            <ArrowRight size={16}/>
+                            Edit Room
+                          </button>
+                        </article>
+                    ))}
                   </div>
-                  <p>{room.description || "No description."}</p>
-                  <button className="secondary-button" type="button" onClick={() => onOpenRoom(room)}>
-                    <ArrowRight size={16} />
-                    Edit Room
-                  </button>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="empty-exits">No rooms returned for this area.</p>
-          )}
-        </section>
-      ) : null}
+              ) : (
+                  <p className="empty-exits">No rooms returned for this area.</p>
+              )}
+            </section>
+        ) : null}
 
-      <div className="area-actions">
-        {areaMessage ? <span className="area-message">{areaMessage}</span> : <span />}
-        <button className="primary-button" type="button" onClick={onSaveArea} disabled={isSaving}>
-          <Save size={18} />
-          {isSaving ? "Saving" : selectedAreaId === "new" ? "Create Area" : "Update Area"}
-        </button>
+        <div className="area-actions">
+          {areaMessage ? <span className="area-message">{areaMessage}</span> : <span/>}
+          <button className="primary-button" type="button" onClick={onSaveArea} disabled={isSaving}>
+            <Save size={18}/>
+            {isSaving ? "Saving" : selectedAreaId === "new" ? "Create Area" : "Update Area"}
+          </button>
+        </div>
       </div>
-    </div>
   );
 }
 
 function RoomDesigner({
-  onBrowseToExitDestination,
-  onCreateNew,
-  onLoadRooms,
-  onSaveRoom,
-  onSelectRoom,
-  onUpdateRoomDraft,
-  roomDraft,
-  roomMessage,
-  roomStatus,
-  rooms,
-  selectedRoomId,
-}: {
+                        onBrowseToExitDestination,
+                        onCreateNew,
+                        onLoadRooms,
+                        onSaveRoom,
+                        onSelectRoom,
+                        onUpdateRoomDraft,
+                        roomDraft,
+                        roomMessage,
+                        roomStatus,
+                        rooms,
+                        selectedRoomId,
+                      }: {
   onBrowseToExitDestination: (exitView: ExitView) => void;
   onCreateNew: () => void;
   onLoadRooms: () => void;
@@ -1039,143 +1134,143 @@ function RoomDesigner({
   const exitViews = roomDraft.exits.map(parseExitView);
 
   return (
-    <div className="area-designer">
-      <div className="area-toolbar">
-        <div className="resource-summary">
-          <BookOpen size={22} />
-          <p>
-            Load existing rooms from the Java API, edit their RoomView fields, or create a new
-            room document through the `/api/v1/rooms` controller.
-          </p>
-        </div>
-        <div className="area-toolbar-actions">
-          <button className="secondary-button" type="button" onClick={onLoadRooms} disabled={isLoading}>
-            <RotateCw size={18} />
-            {isLoading ? "Loading" : "Reload"}
-          </button>
-          <button className="primary-button" type="button" onClick={onCreateNew}>
-            <Plus size={18} />
-            New Room
-          </button>
-        </div>
-      </div>
-
-      <div className="area-workspace">
-        <aside className="area-list" aria-label="Existing rooms">
-          <div className="area-list-heading">
-            <strong>Existing Rooms</strong>
-            <span>{rooms.length}</span>
+      <div className="area-designer">
+        <div className="area-toolbar">
+          <div className="resource-summary">
+            <BookOpen size={22}/>
+            <p>
+              Load existing rooms from the Java API, edit their RoomView fields, or create a new
+              room document through the `/api/v1/rooms` controller.
+            </p>
           </div>
-          {rooms.map((room) => (
-            <button
-              className={selectedRoomId === room.id ? "area-list-item active" : "area-list-item"}
-              key={room.id ?? room.vnum ?? room.name}
-              type="button"
-              onClick={() => onSelectRoom(room.id ?? "new")}
-            >
-              <strong>{room.name || "Unnamed room"}</strong>
-              <span>{room.vnum || room.areaId || room.id || "No vnum"}</span>
+          <div className="area-toolbar-actions">
+            <button className="secondary-button" type="button" onClick={onLoadRooms} disabled={isLoading}>
+              <RotateCw size={18}/>
+              {isLoading ? "Loading" : "Reload"}
             </button>
-          ))}
-        </aside>
-
-        {selectedRoomId === "new" ? (
-          <div className="empty-editor-state">
-            <BookOpen size={28} />
-            <strong>Select a room to edit</strong>
-            <span>Create uses the New Room popup so unsaved rooms do not live in the page form.</span>
             <button className="primary-button" type="button" onClick={onCreateNew}>
-              <Plus size={18} />
+              <Plus size={18}/>
               New Room
             </button>
           </div>
-        ) : (
-        <form className="area-form">
-          <label>
-            Id
-            <input value={roomDraft.id ?? ""} disabled placeholder="Assigned by API" />
-          </label>
-          <label>
-            Area Id
-            <input
-              value={roomDraft.areaId}
-              onChange={(event) => onUpdateRoomDraft("areaId", event.target.value)}
-              placeholder="Area document id"
-            />
-          </label>
-          <label>
-            Vnum
-            <input
-              value={roomDraft.vnum}
-              onChange={(event) => onUpdateRoomDraft("vnum", event.target.value)}
-              placeholder="3001"
-            />
-          </label>
-          <label>
-            Name
-            <input
-              value={roomDraft.name}
-              onChange={(event) => onUpdateRoomDraft("name", event.target.value)}
-              placeholder="Temple Square"
-            />
-          </label>
-          <label className="wide-field">
-            Description
-            <textarea
-              value={roomDraft.description}
-              onChange={(event) => onUpdateRoomDraft("description", event.target.value)}
-              rows={5}
-            />
-          </label>
-          <label className="wide-field">
-            Extra Description
-            <textarea
-              value={roomDraft.extraDescription}
-              onChange={(event) => onUpdateRoomDraft("extraDescription", event.target.value)}
-              rows={4}
-            />
-          </label>
+        </div>
 
-          <div className="room-toggle-row">
-            <label className="proxy-toggle">
-              <input
-                type="checkbox"
-                checked={roomDraft.pvp}
-                onChange={(event) => onUpdateRoomDraft("pvp", event.target.checked)}
-              />
-              <span>PVP</span>
-            </label>
-            <label className="proxy-toggle">
-              <input
-                type="checkbox"
-                checked={roomDraft.spawn}
-                onChange={(event) => onUpdateRoomDraft("spawn", event.target.checked)}
-              />
-              <span>Spawn</span>
-            </label>
-          </div>
-
-          {roomNumberFields.map((field) => (
-            <label key={field}>
-              {startCase(field)}
-              <input
-                type="number"
-                value={roomDraft[field]}
-                onChange={(event) => onUpdateRoomDraft(field, Number(event.target.value))}
-              />
-            </label>
-          ))}
-
-          <div className="exit-pane wide-field">
-            <div className="exit-pane-heading">
-              <div>
-                <strong>Exits</strong>
-                <span>{exitViews.length} directions</span>
-              </div>
+        <div className="area-workspace">
+          <aside className="area-list" aria-label="Existing rooms">
+            <div className="area-list-heading">
+              <strong>Existing Rooms</strong>
+              <span>{rooms.length}</span>
             </div>
-            {exitViews.length > 0 ? (
-              <div className="exit-grid">
-                {exitViews.map((exitView, index) => (
+            {rooms.map((room) => (
+                <button
+                    className={selectedRoomId === room.id ? "area-list-item active" : "area-list-item"}
+                    key={room.id ?? room.vnum ?? room.name}
+                    type="button"
+                    onClick={() => onSelectRoom(room.id ?? "new")}
+                >
+                  <strong>{room.name || "Unnamed room"}</strong>
+                  <span>{room.vnum || room.areaId || room.id || "No vnum"}</span>
+                </button>
+            ))}
+          </aside>
+
+          {selectedRoomId === "new" ? (
+              <div className="empty-editor-state">
+                <BookOpen size={28}/>
+                <strong>Select a room to edit</strong>
+                <span>Create uses the New Room popup so unsaved rooms do not live in the page form.</span>
+                <button className="primary-button" type="button" onClick={onCreateNew}>
+                  <Plus size={18}/>
+                  New Room
+                </button>
+              </div>
+          ) : (
+              <form className="area-form">
+                <label>
+                  Id
+                  <input value={roomDraft.id ?? ""} disabled placeholder="Assigned by API"/>
+                </label>
+                <label>
+                  Area Id
+                  <input
+                      value={roomDraft.areaId}
+                      onChange={(event) => onUpdateRoomDraft("areaId", event.target.value)}
+                      placeholder="Area document id"
+                  />
+                </label>
+                <label>
+                  Vnum
+                  <input
+                      value={roomDraft.vnum}
+                      onChange={(event) => onUpdateRoomDraft("vnum", event.target.value)}
+                      placeholder="3001"
+                  />
+                </label>
+                <label>
+                  Name
+                  <input
+                      value={roomDraft.name}
+                      onChange={(event) => onUpdateRoomDraft("name", event.target.value)}
+                      placeholder="Temple Square"
+                  />
+                </label>
+                <label className="wide-field">
+                  Description
+                  <textarea
+                      value={roomDraft.description}
+                      onChange={(event) => onUpdateRoomDraft("description", event.target.value)}
+                      rows={5}
+                  />
+                </label>
+                <label className="wide-field">
+                  Extra Description
+                  <textarea
+                      value={roomDraft.extraDescription}
+                      onChange={(event) => onUpdateRoomDraft("extraDescription", event.target.value)}
+                      rows={4}
+                  />
+                </label>
+
+                <div className="room-toggle-row">
+                  <label className="proxy-toggle">
+                    <input
+                        type="checkbox"
+                        checked={roomDraft.pvp}
+                        onChange={(event) => onUpdateRoomDraft("pvp", event.target.checked)}
+                    />
+                    <span>PVP</span>
+                  </label>
+                  <label className="proxy-toggle">
+                    <input
+                        type="checkbox"
+                        checked={roomDraft.spawn}
+                        onChange={(event) => onUpdateRoomDraft("spawn", event.target.checked)}
+                    />
+                    <span>Spawn</span>
+                  </label>
+                </div>
+
+                {roomNumberFields.map((field) => (
+                    <label key={field}>
+                      {startCase(field)}
+                      <input
+                          type="number"
+                          value={roomDraft[field]}
+                          onChange={(event) => onUpdateRoomDraft(field, Number(event.target.value))}
+                      />
+                    </label>
+                ))}
+
+                <div className="exit-pane wide-field">
+                  <div className="exit-pane-heading">
+                    <div>
+                      <strong>Exits</strong>
+                      <span>{exitViews.length} directions</span>
+                    </div>
+                  </div>
+                  {exitViews.length > 0 ? (
+                      <div className="exit-grid">
+                        {exitViews.map((exitView, index) => (
                   <article className="exit-card" key={`${exitView.direction}-${exitView.to_room_id}-${index}`}>
                     <div className="exit-card-heading">
                       <strong>{directionLabel(exitView.direction)}</strong>

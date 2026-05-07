@@ -18,20 +18,15 @@ npm install
 npm run dev
 ```
 
-The designer defaults to `http://dragon:9080`, matching the current Java backend environment. The Settings section in the app can change the API server at runtime and persists the value in browser storage.
+The designer defaults to `http://localhost:9080`. The Settings section can change the API server at runtime. During local development, the Vite/Node dev server serializes those settings to `.designer/settings.json`, which is intentionally ignored by git.
 
-The Vite dev server proxies `/api` to `http://dragon:9080` so browser requests avoid CORS issues during local development. Game data is read from `/api/v1/game`. Set `VITE_SOM_API_BASE_URL` when you want a different build-time default.
+The Vite dev server proxies `/api` to the saved API server from `.designer/settings.json` so browser requests avoid CORS issues during local development. Game data is read from `/api/v1/game`.
 
 ```bash
 npm run dev
 ```
 
-PowerShell example with an explicit API URL:
-
-```powershell
-$env:VITE_SOM_API_BASE_URL = "http://localhost:8080"
-npm run dev
-```
+Use the in-app Settings page to point the designer at another API server.
 
 ## Verification
 

@@ -170,9 +170,13 @@ button {
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto;
+  grid-template-columns: auto minmax(220px, 1fr) auto auto auto;
   gap: 12px;
   align-items: center;
+}
+
+.settings-topbar {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .mobile-menu {
@@ -216,6 +220,25 @@ button {
 .primary-button:hover,
 .resource-card button:hover {
   background: #255a45;
+}
+
+.settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  color: #1c3126;
+  background: #ffffff;
+  border: 1px solid #dbe2dc;
+  border-radius: 8px;
+}
+
+.settings-button.active,
+.settings-button:hover {
+  color: #ffffff;
+  background: #2f6f55;
 }
 
 .overview-band {
@@ -372,9 +395,16 @@ button {
 .settings-panel {
   display: grid;
   gap: 16px;
-  margin-bottom: 18px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid #e1e7e1;
+}
+
+.settings-only {
+  display: grid;
+  align-content: start;
+  max-width: 920px;
+  padding: 22px;
+  background: #ffffff;
+  border: 1px solid #dbe2dc;
+  border-radius: 8px;
 }
 
 .api-settings-form {
@@ -1055,7 +1085,11 @@ button {
   }
 
   .topbar {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .settings-topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .mobile-menu {
@@ -1098,6 +1132,10 @@ button {
   }
 
   .topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-topbar {
     grid-template-columns: 1fr;
   }
 
