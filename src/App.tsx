@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   ArrowRight,
@@ -8,6 +8,8 @@ import {
   Code2,
   DatabaseZap,
   FileJson,
+  LogIn,
+  LogOut,
   X,
   Menu,
   Plus,
@@ -22,11 +24,15 @@ import {
   buildApiUrl,
   buildCreateRequest,
   checkApiHealth,
+  loadAuthSession,
   loadDesignerSettings,
+  loginDesigner,
+  logoutDesigner,
   readSavedApiBaseUrl,
   readSavedApiProxyEnabled,
   saveDesignerSettings,
 } from "./api";
+import type { AuthSession } from "./api";
 
 const navItems = [
   { id: "areas" as FeatureKind, label: "Areas" },
@@ -97,6 +103,10 @@ export function App() {
     state: "checking",
     detail: "Checking Java API",
   });
+  const [authSession, setAuthSession] = useState<AuthSession>({authenticated: false});
+  const [authStatus, setAuthStatus] = useState<"checking" | "ready">("checking");
+  const [loginStatus, setLoginStatus] = useState<"idle" | "submitting">("idle");
+  const [loginMessage, setLoginMessage] = useState("");
   const [areas, setAreas] = useState<AreaView[]>([]);
   const [areaDraft, setAreaDraft] = useState<AreaView>(emptyAreaDraft);
   const [selectedAreaId, setSelectedAreaId] = useState<string>("new");
@@ -133,20 +143,35 @@ export function App() {
   );
 
   useEffect(() => {
+    loadAuthSession().then((session) => {
+      setAuthSession(session);
+      setAuthStatus("ready");
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!authSession.authenticated) {
+      return;
+    }
+
     loadDesignerSettings().then((settings) => {
       setApiBaseUrl(settings.apiBaseUrl);
       setApiBaseUrlInput(settings.apiBaseUrl);
       setUseDevProxy(settings.useDevProxy);
     });
-  }, []);
+  }, [authSession.authenticated]);
 
   useEffect(() => {
+    if (!authSession.authenticated) {
+      return;
+    }
+
     setHealth({
       state: "checking",
       detail: `Checking ${apiBaseUrl}`,
     });
     checkApiHealth(apiBaseUrl, useDevProxy).then(setHealth);
-  }, [apiBaseUrl, useDevProxy]);
+  }, [apiBaseUrl, authSession.authenticated, useDevProxy]);
 
   function updateDraft<Value extends keyof DesignerDraft>(key: Value, value: DesignerDraft[Value]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -209,6 +234,28 @@ export function App() {
     }
   }
 
+  async function submitLogin(username: string, password: string) {
+    setLoginStatus("submitting");
+    setLoginMessage("");
+
+    try {
+      const session = await loginDesigner(username, password);
+      setAuthSession(session);
+      setLoginMessage("");
+    } catch (error) {
+      setLoginMessage(error instanceof Error ? error.message : "Unable to sign in.");
+    } finally {
+      setLoginStatus("idle");
+    }
+  }
+
+  async function submitLogout() {
+    await logoutDesigner();
+    setAuthSession({authenticated: false});
+    setActiveKind("spells");
+    setLoginMessage("");
+  }
+
   const loadAreas = useCallback(async () => {
     setAreaStatus("loading");
     setAreaMessage("");
@@ -238,12 +285,12 @@ export function App() {
   }, [apiBaseUrl, selectedAreaId, useDevProxy]);
 
   useEffect(() => {
-    if (activeKind !== "areas") {
+    if (!authSession.authenticated || activeKind !== "areas") {
       return;
     }
 
     loadAreas();
-  }, [activeKind, loadAreas]);
+  }, [activeKind, authSession.authenticated, loadAreas]);
 
   const loadRooms = useCallback(async () => {
     setRoomStatus("loading");
@@ -308,12 +355,12 @@ export function App() {
   );
 
   useEffect(() => {
-    if (activeKind !== "rooms") {
+    if (!authSession.authenticated || activeKind !== "rooms") {
       return;
     }
 
     loadRooms();
-  }, [activeKind, loadRooms]);
+  }, [activeKind, authSession.authenticated, loadRooms]);
 
   function selectArea(areaId: string) {
     setSelectedAreaId(areaId);
@@ -528,6 +575,20 @@ export function App() {
     }
   }
 
+  if (authStatus === "checking") {
+    return <AuthLoading />;
+  }
+
+  if (!authSession.authenticated) {
+    return (
+        <LoginPage
+            isSubmitting={loginStatus === "submitting"}
+            message={loginMessage}
+            onSubmit={submitLogin}
+        />
+    );
+  }
+
   return (
       <div className="app-shell">
         <aside className="sidebar">
@@ -568,6 +629,15 @@ export function App() {
               <strong>{health.state === "online" ? "API online" : "Draft mode"}</strong>
               <span>{health.detail}</span>
             </div>
+          </div>
+          <div className="sidebar-user">
+            <div>
+              <strong>{authSession.user?.username}</strong>
+              <span>{authSession.user?.role}</span>
+            </div>
+            <button className="icon-button" type="button" onClick={submitLogout} aria-label="Sign out">
+              <LogOut size={18}/>
+            </button>
           </div>
         </aside>
 
@@ -839,6 +909,80 @@ export function App() {
           )}
         </main>
       </div>
+  );
+}
+
+function AuthLoading() {
+  return (
+      <main className="login-shell">
+        <section className="login-panel">
+          <div className="brand-row login-brand">
+            <div className="brand-mark">SoM</div>
+            <div>
+              <h1>Designer</h1>
+              <span>Checking session</span>
+            </div>
+          </div>
+        </section>
+      </main>
+  );
+}
+
+function LoginPage({
+                     isSubmitting,
+                     message,
+                     onSubmit,
+                   }: {
+  isSubmitting: boolean;
+  message: string;
+  onSubmit: (username: string, password: string) => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onSubmit(username, password);
+  }
+
+  return (
+      <main className="login-shell">
+        <section className="login-panel" aria-labelledby="login-title">
+          <div className="brand-row login-brand">
+            <div className="brand-mark">SoM</div>
+            <div>
+              <h1 id="login-title">Designer</h1>
+              <span>Builder access</span>
+            </div>
+          </div>
+
+          <form className="login-form" onSubmit={handleSubmit}>
+            <label>
+              Username or Email
+              <input
+                  autoComplete="username"
+                  autoFocus
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+              />
+            </label>
+            <label>
+              Password
+              <input
+                  autoComplete="current-password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+            {message ? <p className="login-message">{message}</p> : null}
+            <button className="primary-button" type="submit" disabled={isSubmitting}>
+              <LogIn size={18}/>
+              {isSubmitting ? "Signing in" : "Sign In"}
+            </button>
+          </form>
+        </section>
+      </main>
   );
 }
 

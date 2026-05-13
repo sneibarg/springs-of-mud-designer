@@ -11,6 +11,18 @@ export type DesignerSettings = {
   useDevProxy: boolean;
 };
 
+export type AuthUser = {
+  id: number;
+  username: string;
+  email: string;
+  role: string;
+};
+
+export type AuthSession = {
+  authenticated: boolean;
+  user?: AuthUser;
+};
+
 export const DEFAULT_DESIGNER_SETTINGS: DesignerSettings = {
   apiBaseUrl: DEFAULT_API_BASE_URL,
   useDevProxy: DEFAULT_API_PROXY_ENABLED,
@@ -49,6 +61,43 @@ export async function saveDesignerSettings(settings: DesignerSettings) {
   }
 
   return normalizeDesignerSettings((await response.json()) as Partial<DesignerSettings>);
+}
+
+export async function loadAuthSession(): Promise<AuthSession> {
+  try {
+    const response = await fetch("/designer/auth/session");
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return normalizeAuthSession((await response.json()) as Partial<AuthSession>);
+  } catch {
+    return { authenticated: false };
+  }
+}
+
+export async function loginDesigner(username: string, password: string): Promise<AuthSession> {
+  const response = await fetch("/designer/auth/login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? `Login failed: HTTP ${response.status}`);
+  }
+
+  return normalizeAuthSession((await response.json()) as Partial<AuthSession>);
+}
+
+export async function logoutDesigner() {
+  await fetch("/designer/auth/logout", {
+    method: "POST",
+  });
 }
 
 export function readSavedApiBaseUrl() {
@@ -131,5 +180,21 @@ function normalizeDesignerSettings(settings: Partial<DesignerSettings>): Designe
     apiBaseUrl: normalizeApiBaseUrl(settings.apiBaseUrl ?? "") || DEFAULT_API_BASE_URL,
     useDevProxy:
       typeof settings.useDevProxy === "boolean" ? settings.useDevProxy : DEFAULT_API_PROXY_ENABLED,
+  };
+}
+
+function normalizeAuthSession(session: Partial<AuthSession>): AuthSession {
+  if (!session.authenticated || !session.user) {
+    return { authenticated: false };
+  }
+
+  return {
+    authenticated: true,
+    user: {
+      id: Number(session.user.id),
+      username: String(session.user.username ?? ""),
+      email: String(session.user.email ?? ""),
+      role: String(session.user.role ?? ""),
+    },
   };
 }

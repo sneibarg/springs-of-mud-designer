@@ -29,6 +29,80 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(rgba(18, 39, 29, 0.72), rgba(18, 39, 29, 0.72)),
+    url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80");
+  background-position: center;
+  background-size: cover;
+}
+
+.login-panel {
+  display: grid;
+  gap: 24px;
+  width: min(430px, 100%);
+  padding: 28px;
+  color: #17211b;
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 8px;
+  box-shadow: 0 28px 90px rgba(15, 29, 21, 0.32);
+}
+
+.login-brand h1,
+.login-brand span {
+  margin: 0;
+}
+
+.login-brand span {
+  color: #627168;
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.login-form label {
+  display: grid;
+  gap: 7px;
+  color: #4d5c52;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.login-form input {
+  width: 100%;
+  min-height: 42px;
+  color: #17211b;
+  background: #ffffff;
+  border: 1px solid #cfd8d1;
+  border-radius: 8px;
+  outline: none;
+  padding: 10px 12px;
+}
+
+.login-form input:focus {
+  border-color: #2f6f55;
+  box-shadow: 0 0 0 3px rgba(47, 111, 85, 0.14);
+}
+
+.login-message {
+  margin: 0;
+  color: #a04332;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -139,6 +213,38 @@ button {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
+}
+
+.sidebar-user {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  color: #eef4ed;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.sidebar-user strong,
+.sidebar-user span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-user span {
+  color: #b8c7bd;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.sidebar-user .icon-button {
+  width: 40px;
+  color: #1a2d23;
+  background: #d7f26b;
 }
 
 .sidebar-panel strong,
