@@ -1,3 +1,4 @@
+// @ts-ignore
 import type { ViteDevServer } from "vite";
 import { readMysqlConnectionConfig } from "./databaseSettings";
 import { readRequestBody, sendJson } from "./http";

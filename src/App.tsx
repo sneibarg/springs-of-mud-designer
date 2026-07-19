@@ -1,8 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
-  ArrowRight,
-  BookOpen,
   CheckCircle2,
   CircleDashed,
   Code2,
@@ -10,7 +8,6 @@ import {
   FileJson,
   LogIn,
   LogOut,
-  X,
   Menu,
   Plus,
   RotateCw,
@@ -19,7 +16,56 @@ import {
   ServerCog,
 } from "lucide-react";
 import { apiResources, initialDraft, workQueue } from "./data";
-import type { ApiHealth, AreaView, DesignerDraft, ExitView, FeatureKind, RoomView } from "./domain";
+import {
+  AreaDesigner,
+  EditableResourceCreateModal,
+  EditableResourceDesigner,
+  MobileCreateModal,
+  MobileDesigner,
+  RoomCreateModal,
+  RoomDesigner,
+  TopLevelResourceDesigner,
+  areaScopedDraftKinds,
+  compareAreas,
+  compareEditableResourceDocuments,
+  compareMobiles,
+  compareRooms,
+  editableResourceFieldNames,
+  editableResourceKinds,
+  emptyAreaDraft,
+  emptyEditableResourceDrafts,
+  emptyMobileDraft,
+  emptyRoomDraft,
+  findRoomForExit,
+  getEmptyEditableResourceDraft,
+  mergeRooms,
+  mobileFieldNames,
+  navItems,
+  normalizeArea,
+  normalizeEditableResourceDocument,
+  normalizeMobile,
+  normalizeRoom,
+  singularResourceLabel,
+  topLevelEditableResourceKinds,
+  upsertArea,
+  upsertEditableResourceDocument,
+  upsertEditableResourceDocumentForArea,
+  upsertMobileForArea,
+  upsertRoom,
+  upsertRoomForArea,
+  validateEditableResourceDocument,
+  validateMobile,
+  validateRoom,
+  type ApiHealth,
+  type AreaView,
+  type DesignerDraft,
+  type EditableResourceDocument,
+  type EditableValue,
+  type ExitView,
+  type FeatureKind,
+  type MobileView,
+  type RoomView,
+} from "./domain";
 import {
   buildApiUrl,
   buildCreateRequest,
@@ -33,65 +79,6 @@ import {
   saveDesignerSettings,
 } from "./api";
 import type { AuthSession } from "./api";
-
-const navItems = [
-  { id: "areas" as FeatureKind, label: "Areas" },
-  { id: "rooms" as FeatureKind, label: "Rooms" },
-  { id: "mobiles" as FeatureKind, label: "Mobiles" },
-  { id: "items" as FeatureKind, label: "Items" },
-  { id: "skills" as FeatureKind, label: "Skills" },
-  { id: "spells" as FeatureKind, label: "Spells" },
-  { id: "communication" as FeatureKind, label: "Comms" },
-];
-
-const emptyAreaDraft: AreaView = {
-  author: "",
-  name: "",
-  vnum: "",
-  suggestedLevelRange: "",
-  rooms: [],
-  mobiles: [],
-  objects: [],
-  shops: [],
-  resets: [],
-  specials: [],
-};
-
-const areaListFields = [
-  "rooms",
-  "mobiles",
-  "objects",
-  "shops",
-  "resets",
-  "specials",
-] as const;
-
-const emptyRoomDraft: RoomView = {
-  areaId: "",
-  vnum: "",
-  name: "",
-  description: "",
-  extraDescription: "",
-  pvp: false,
-  spawn: false,
-  spawnTimer: 0,
-  spawnTime: 0,
-  teleDelay: 0,
-  roomFlags: 0,
-  sectorType: 0,
-  exits: [],
-  mobiles: {},
-};
-
-const roomNumberFields = [
-  "spawnTimer",
-  "spawnTime",
-  "teleDelay",
-  "roomFlags",
-  "sectorType",
-] as const;
-
-const directionNames = ["north", "east", "south", "west", "up", "down"];
 
 export function App() {
   const [activeKind, setActiveKind] = useState<FeatureKind>("spells");
@@ -116,11 +103,38 @@ export function App() {
   const [areaRoomsStatus, setAreaRoomsStatus] = useState<"idle" | "loading">("idle");
   const [rooms, setRooms] = useState<RoomView[]>([]);
   const [roomDraft, setRoomDraft] = useState<RoomView>(emptyRoomDraft);
+  const [selectedRoomAreaId, setSelectedRoomAreaId] = useState("");
   const [selectedRoomId, setSelectedRoomId] = useState<string>("new");
   const [newRoomDraft, setNewRoomDraft] = useState<RoomView>(emptyRoomDraft);
   const [isNewRoomModalOpen, setIsNewRoomModalOpen] = useState(false);
   const [roomStatus, setRoomStatus] = useState<"idle" | "loading" | "saving">("idle");
   const [roomMessage, setRoomMessage] = useState("");
+  const [mobiles, setMobiles] = useState<MobileView[]>([]);
+  const [mobileDraft, setMobileDraft] = useState<MobileView>(emptyMobileDraft);
+  const [selectedMobileAreaId, setSelectedMobileAreaId] = useState("");
+  const [selectedMobileId, setSelectedMobileId] = useState<string>("new");
+  const [newMobileDraft, setNewMobileDraft] = useState<MobileView>(emptyMobileDraft);
+  const [isNewMobileModalOpen, setIsNewMobileModalOpen] = useState(false);
+  const [mobileStatus, setMobileStatus] = useState<"idle" | "loading" | "saving">("idle");
+  const [mobileMessage, setMobileMessage] = useState("");
+  const [editableDocuments, setEditableDocuments] = useState<EditableResourceDocument[]>([]);
+  const [editableDocumentDraft, setEditableDocumentDraft] = useState<EditableResourceDocument>(emptyEditableResourceDrafts.items);
+  const [selectedEditableAreaId, setSelectedEditableAreaId] = useState("");
+  const [selectedEditableDocumentId, setSelectedEditableDocumentId] = useState<string>("new");
+  const [newEditableDocumentDraft, setNewEditableDocumentDraft] =
+      useState<EditableResourceDocument>(emptyEditableResourceDrafts.items);
+  const [isNewEditableDocumentModalOpen, setIsNewEditableDocumentModalOpen] = useState(false);
+  const [editableDocumentStatus, setEditableDocumentStatus] = useState<"idle" | "loading" | "saving">("idle");
+  const [editableDocumentMessage, setEditableDocumentMessage] = useState("");
+  const [topLevelDocuments, setTopLevelDocuments] = useState<EditableResourceDocument[]>([]);
+  const [topLevelDocumentDraft, setTopLevelDocumentDraft] =
+      useState<EditableResourceDocument>(emptyEditableResourceDrafts.classes);
+  const [selectedTopLevelDocumentId, setSelectedTopLevelDocumentId] = useState<string>("new");
+  const [newTopLevelDocumentDraft, setNewTopLevelDocumentDraft] =
+      useState<EditableResourceDocument>(emptyEditableResourceDrafts.classes);
+  const [isNewTopLevelDocumentModalOpen, setIsNewTopLevelDocumentModalOpen] = useState(false);
+  const [topLevelDocumentStatus, setTopLevelDocumentStatus] = useState<"idle" | "loading" | "saving">("idle");
+  const [topLevelDocumentMessage, setTopLevelDocumentMessage] = useState("");
 
   const activeResource = useMemo(
       () => apiResources.find((resource) => resource.kind === activeKind) ?? apiResources[0],
@@ -267,7 +281,7 @@ export function App() {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const loadedAreas = (await response.json()) as AreaView[];
+      const loadedAreas = ((await response.json()) as AreaView[]).map(normalizeArea).sort(compareAreas);
       setAreas(loadedAreas);
       setAreaMessage(`Loaded ${loadedAreas.length} areas.`);
 
@@ -285,25 +299,33 @@ export function App() {
   }, [apiBaseUrl, selectedAreaId, useDevProxy]);
 
   useEffect(() => {
-    if (!authSession.authenticated || activeKind !== "areas") {
+    if (!authSession.authenticated || !areaScopedDraftKinds.includes(activeKind)) {
       return;
     }
 
     loadAreas();
   }, [activeKind, authSession.authenticated, loadAreas]);
 
-  const loadRooms = useCallback(async () => {
+  const loadRooms = useCallback(async (areaId = selectedRoomAreaId) => {
+    if (!areaId) {
+      setRooms([]);
+      setSelectedRoomId("new");
+      setRoomDraft(emptyRoomDraft);
+      setRoomMessage("Select an area to load rooms.");
+      return;
+    }
+
     setRoomStatus("loading");
     setRoomMessage("");
 
     try {
-      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, "/api/v1/rooms"));
+      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, `/api/v1/rooms/area/${areaId}`));
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const loadedRooms = (await response.json()) as RoomView[];
+      const loadedRooms = ((await response.json()) as RoomView[]).map(normalizeRoom).sort(compareRooms);
       setRooms(loadedRooms);
       setRoomMessage(`Loaded ${loadedRooms.length} rooms.`);
 
@@ -311,6 +333,9 @@ export function App() {
         const selectedRoom = loadedRooms.find((room) => room.id === selectedRoomId);
         if (selectedRoom) {
           setRoomDraft(normalizeRoom(selectedRoom));
+        } else {
+          setSelectedRoomId("new");
+          setRoomDraft(emptyRoomDraft);
         }
       }
     } catch (error) {
@@ -318,7 +343,7 @@ export function App() {
     } finally {
       setRoomStatus("idle");
     }
-  }, [apiBaseUrl, selectedRoomId, useDevProxy]);
+  }, [apiBaseUrl, selectedRoomAreaId, selectedRoomId, useDevProxy]);
 
   const loadRoomsForArea = useCallback(
       async (areaId: string) => {
@@ -338,7 +363,7 @@ export function App() {
             throw new Error(`HTTP ${response.status}`);
           }
 
-          const loadedRooms = ((await response.json()) as RoomView[]).map(normalizeRoom);
+          const loadedRooms = ((await response.json()) as RoomView[]).map(normalizeRoom).sort(compareRooms);
           setAreaRooms(loadedRooms);
         } catch (error) {
           setAreaRooms([]);
@@ -359,8 +384,209 @@ export function App() {
       return;
     }
 
-    loadRooms();
-  }, [activeKind, authSession.authenticated, loadRooms]);
+    if (selectedRoomAreaId) {
+      loadRooms(selectedRoomAreaId);
+    } else {
+      setRooms([]);
+      setSelectedRoomId("new");
+      setRoomDraft(emptyRoomDraft);
+    }
+  }, [activeKind, authSession.authenticated, loadRooms, selectedRoomAreaId]);
+
+  const loadMobiles = useCallback(async (areaId = selectedMobileAreaId) => {
+    if (!areaId) {
+      setMobiles([]);
+      setSelectedMobileId("new");
+      setMobileDraft(emptyMobileDraft);
+      setMobileMessage("Select an area to load mobiles.");
+      return;
+    }
+
+    setMobileStatus("loading");
+    setMobileMessage("");
+
+    try {
+      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, `/api/v1/mobiles/area/${areaId}`));
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const loadedMobiles = ((await response.json()) as MobileView[]).map(normalizeMobile).sort(compareMobiles);
+      setMobiles(loadedMobiles);
+      setMobileMessage(`Loaded ${loadedMobiles.length} mobiles.`);
+
+      if (selectedMobileId !== "new") {
+        const selectedMobile = loadedMobiles.find((mobile) => mobile.id === selectedMobileId);
+        if (selectedMobile) {
+          setMobileDraft(normalizeMobile(selectedMobile));
+        } else {
+          setSelectedMobileId("new");
+          setMobileDraft(emptyMobileDraft);
+        }
+      }
+    } catch (error) {
+      setMobileMessage(error instanceof Error ? `Could not load mobiles: ${error.message}` : "Could not load mobiles.");
+    } finally {
+      setMobileStatus("idle");
+    }
+  }, [apiBaseUrl, selectedMobileAreaId, selectedMobileId, useDevProxy]);
+
+  useEffect(() => {
+    if (!authSession.authenticated || activeKind !== "mobiles") {
+      return;
+    }
+
+    if (selectedMobileAreaId) {
+      loadMobiles(selectedMobileAreaId);
+    } else {
+      setMobiles([]);
+      setSelectedMobileId("new");
+      setMobileDraft(emptyMobileDraft);
+    }
+  }, [activeKind, authSession.authenticated, loadMobiles, selectedMobileAreaId]);
+
+  const loadEditableDocuments = useCallback(
+      async (kind: FeatureKind = activeKind, areaId = selectedEditableAreaId) => {
+        const resource = apiResources.find((entry) => entry.kind === kind);
+
+        if (!resource || !editableResourceKinds.includes(kind)) {
+          setEditableDocuments([]);
+          return;
+        }
+
+        if (!areaId) {
+          setEditableDocuments([]);
+          setSelectedEditableDocumentId("new");
+          setEditableDocumentDraft(getEmptyEditableResourceDraft(kind));
+          setEditableDocumentMessage(`Select an area to load ${resource.label.toLowerCase()}.`);
+          return;
+        }
+
+        setEditableDocumentStatus("loading");
+        setEditableDocumentMessage("");
+
+        try {
+          const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, `${resource.endpoint}/area/${areaId}`));
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const loadedDocuments = ((await response.json()) as EditableResourceDocument[])
+              .map((document) => normalizeEditableResourceDocument(document, kind))
+              .sort(compareEditableResourceDocuments);
+          setEditableDocuments(loadedDocuments);
+          setEditableDocumentMessage(`Loaded ${loadedDocuments.length} ${resource.label.toLowerCase()}.`);
+
+          if (selectedEditableDocumentId !== "new") {
+            const selectedDocument = loadedDocuments.find((document) => document.id === selectedEditableDocumentId);
+            if (selectedDocument) {
+              setEditableDocumentDraft(normalizeEditableResourceDocument(selectedDocument, kind));
+            } else {
+              setSelectedEditableDocumentId("new");
+              setEditableDocumentDraft(getEmptyEditableResourceDraft(kind));
+            }
+          }
+        } catch (error) {
+          setEditableDocuments([]);
+          setEditableDocumentMessage(
+              error instanceof Error
+                  ? `Could not load ${resource.label.toLowerCase()}: ${error.message}`
+                  : `Could not load ${resource.label.toLowerCase()}.`,
+          );
+        } finally {
+          setEditableDocumentStatus("idle");
+        }
+      },
+      [activeKind, apiBaseUrl, selectedEditableAreaId, selectedEditableDocumentId, useDevProxy],
+  );
+
+  useEffect(() => {
+    if (!authSession.authenticated || !editableResourceKinds.includes(activeKind)) {
+      return;
+    }
+
+    setEditableDocumentDraft((currentDraft) =>
+        selectedEditableDocumentId === "new" ? getEmptyEditableResourceDraft(activeKind) : currentDraft,
+    );
+    setNewEditableDocumentDraft(getEmptyEditableResourceDraft(activeKind));
+
+    if (selectedEditableAreaId) {
+      loadEditableDocuments(activeKind, selectedEditableAreaId);
+    } else {
+      setEditableDocuments([]);
+      setSelectedEditableDocumentId("new");
+      setEditableDocumentMessage(`Select an area to load ${activeResource.label.toLowerCase()}.`);
+    }
+  }, [
+    activeKind,
+    activeResource.label,
+    authSession.authenticated,
+    loadEditableDocuments,
+    selectedEditableAreaId,
+    selectedEditableDocumentId,
+  ]);
+
+  const loadTopLevelDocuments = useCallback(
+      async (kind: FeatureKind = activeKind) => {
+        const resource = apiResources.find((entry) => entry.kind === kind);
+
+        if (!resource || !topLevelEditableResourceKinds.includes(kind)) {
+          setTopLevelDocuments([]);
+          return;
+        }
+
+        setTopLevelDocumentStatus("loading");
+        setTopLevelDocumentMessage("");
+
+        try {
+          const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, resource.endpoint));
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const loadedDocuments = ((await response.json()) as EditableResourceDocument[])
+              .map((document) => normalizeEditableResourceDocument(document, kind))
+              .sort(compareEditableResourceDocuments);
+          setTopLevelDocuments(loadedDocuments);
+          setTopLevelDocumentMessage(`Loaded ${loadedDocuments.length} ${resource.label.toLowerCase()}.`);
+
+          if (selectedTopLevelDocumentId !== "new") {
+            const selectedDocument = loadedDocuments.find((document) => document.id === selectedTopLevelDocumentId);
+            if (selectedDocument) {
+              setTopLevelDocumentDraft(normalizeEditableResourceDocument(selectedDocument, kind));
+            } else {
+              setSelectedTopLevelDocumentId("new");
+              setTopLevelDocumentDraft(getEmptyEditableResourceDraft(kind));
+            }
+          }
+        } catch (error) {
+          setTopLevelDocuments([]);
+          setTopLevelDocumentMessage(
+              error instanceof Error
+                  ? `Could not load ${resource.label.toLowerCase()}: ${error.message}`
+                  : `Could not load ${resource.label.toLowerCase()}.`,
+          );
+        } finally {
+          setTopLevelDocumentStatus("idle");
+        }
+      },
+      [activeKind, apiBaseUrl, selectedTopLevelDocumentId, useDevProxy],
+  );
+
+  useEffect(() => {
+    if (!authSession.authenticated || !topLevelEditableResourceKinds.includes(activeKind)) {
+      return;
+    }
+
+    setTopLevelDocumentDraft((currentDraft) =>
+        selectedTopLevelDocumentId === "new" ? getEmptyEditableResourceDraft(activeKind) : currentDraft,
+    );
+    setNewTopLevelDocumentDraft(getEmptyEditableResourceDraft(activeKind));
+    loadTopLevelDocuments(activeKind);
+  }, [activeKind, authSession.authenticated, loadTopLevelDocuments, selectedTopLevelDocumentId]);
 
   function selectArea(areaId: string) {
     setSelectedAreaId(areaId);
@@ -377,6 +603,108 @@ export function App() {
       setAreaDraft(normalizeArea(selectedArea));
       loadRoomsForArea(areaId);
     }
+  }
+
+  function selectRoomArea(areaId: string) {
+    setSelectedRoomAreaId(areaId);
+    setSelectedRoomId("new");
+    setRoomDraft(emptyRoomDraft);
+
+    if (!areaId) {
+      setRooms([]);
+      setRoomMessage("Select an area to load rooms.");
+    }
+  }
+
+  function selectMobileArea(areaId: string) {
+    setSelectedMobileAreaId(areaId);
+    setSelectedMobileId("new");
+    setMobileDraft(emptyMobileDraft);
+
+    if (!areaId) {
+      setMobiles([]);
+      setMobileMessage("Select an area to load mobiles.");
+    }
+  }
+
+  function selectMobile(mobileId: string) {
+    setSelectedMobileId(mobileId);
+    setMobileMessage("");
+
+    if (mobileId === "new") {
+      setMobileDraft(emptyMobileDraft);
+      return;
+    }
+
+    const selectedMobile = mobiles.find((mobile) => mobile.id === mobileId);
+    if (selectedMobile) {
+      setMobileDraft(normalizeMobile(selectedMobile));
+    }
+  }
+
+  function openNewMobileModal() {
+    setNewMobileDraft({
+      ...emptyMobileDraft,
+      areaId: selectedMobileAreaId || String(mobileDraft.areaId ?? ""),
+    });
+    setMobileMessage("");
+    setIsNewMobileModalOpen(true);
+  }
+
+  function selectEditableArea(areaId: string) {
+    setSelectedEditableAreaId(areaId);
+    setSelectedEditableDocumentId("new");
+    setEditableDocumentDraft(getEmptyEditableResourceDraft(activeKind));
+
+    if (!areaId) {
+      setEditableDocuments([]);
+      setEditableDocumentMessage(`Select an area to load ${activeResource.label.toLowerCase()}.`);
+    }
+  }
+
+  function selectEditableDocument(documentId: string) {
+    setSelectedEditableDocumentId(documentId);
+    setEditableDocumentMessage("");
+
+    if (documentId === "new") {
+      setEditableDocumentDraft(getEmptyEditableResourceDraft(activeKind));
+      return;
+    }
+
+    const selectedDocument = editableDocuments.find((document) => document.id === documentId);
+    if (selectedDocument) {
+      setEditableDocumentDraft(normalizeEditableResourceDocument(selectedDocument, activeKind));
+    }
+  }
+
+  function openNewEditableDocumentModal() {
+    setNewEditableDocumentDraft({
+      ...getEmptyEditableResourceDraft(activeKind),
+      areaId: selectedEditableAreaId || String(editableDocumentDraft.areaId ?? ""),
+    });
+    setEditableDocumentMessage("");
+    setIsNewEditableDocumentModalOpen(true);
+  }
+
+  function selectTopLevelDocument(documentId: string) {
+    setSelectedTopLevelDocumentId(documentId);
+    setTopLevelDocumentMessage("");
+
+    if (documentId === "new") {
+      setTopLevelDocumentDraft(getEmptyEditableResourceDraft(activeKind));
+      return;
+    }
+
+    const selectedDocument = topLevelDocuments.find((document) => document.id === documentId);
+    if (selectedDocument) {
+      setTopLevelDocumentDraft(normalizeEditableResourceDocument(selectedDocument, activeKind));
+    }
+  }
+
+  function openNewTopLevelDocumentModal() {
+    setNewTopLevelDocumentDraft(getEmptyEditableResourceDraft(activeKind));
+    setTopLevelDocumentMessage("");
+    setIsNewTopLevelDocumentModalOpen(true);
   }
 
   function updateAreaDraft<Value extends keyof AreaView>(key: Value, value: AreaView[Value]) {
@@ -456,6 +784,30 @@ export function App() {
     setRoomDraft((current) => ({ ...current, [key]: value }));
   }
 
+  function updateMobileDraft(key: string, value: EditableValue | undefined) {
+    setMobileDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateNewMobileDraft(key: string, value: EditableValue | undefined) {
+    setNewMobileDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateEditableDocumentDraft(key: string, value: EditableValue | undefined) {
+    setEditableDocumentDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateNewEditableDocumentDraft(key: string, value: EditableValue | undefined) {
+    setNewEditableDocumentDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateTopLevelDocumentDraft(key: string, value: EditableValue | undefined) {
+    setTopLevelDocumentDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateNewTopLevelDocumentDraft(key: string, value: EditableValue | undefined) {
+    setNewTopLevelDocumentDraft((current) => ({ ...current, [key]: value }));
+  }
+
   async function saveRoom() {
     const payload = normalizeRoom(roomDraft);
     const endpoint = `/api/v1/rooms/${payload.id}`;
@@ -492,8 +844,8 @@ export function App() {
       setRoomDraft(savedRoom);
       setSelectedRoomId(savedRoom.id ?? "new");
       setRoomMessage("Room updated.");
-      setRooms((currentRooms) => upsertRoom(currentRooms, savedRoom));
-      setAreaRooms((currentRooms) => upsertRoomIfSameArea(currentRooms, savedRoom, selectedAreaId));
+      setRooms((currentRooms) => upsertRoomForArea(currentRooms, savedRoom, selectedRoomAreaId));
+      setAreaRooms((currentRooms) => upsertRoomForArea(currentRooms, savedRoom, selectedAreaId));
     } catch (error) {
       setRoomMessage(error instanceof Error ? `Could not save room: ${error.message}` : "Could not save room.");
     } finally {
@@ -527,8 +879,8 @@ export function App() {
       }
 
       const savedRoom = normalizeRoom((await response.json()) as RoomView);
-      setRooms((currentRooms) => upsertRoom(currentRooms, savedRoom));
-      setAreaRooms((currentRooms) => upsertRoomIfSameArea(currentRooms, savedRoom, selectedAreaId));
+      setRooms((currentRooms) => upsertRoomForArea(currentRooms, savedRoom, selectedRoomAreaId));
+      setAreaRooms((currentRooms) => upsertRoomForArea(currentRooms, savedRoom, selectedAreaId));
       setRoomDraft(savedRoom);
       setSelectedRoomId(savedRoom.id ?? "new");
       setNewRoomDraft(emptyRoomDraft);
@@ -538,6 +890,294 @@ export function App() {
       setRoomMessage(error instanceof Error ? `Could not create room: ${error.message}` : "Could not create room.");
     } finally {
       setRoomStatus("idle");
+    }
+  }
+
+  async function saveMobile() {
+    const payload = normalizeMobile(mobileDraft);
+
+    if (selectedMobileId === "new" || !payload.id) {
+      setMobileMessage("Select an existing mobile to update, or use New Mobile.");
+      return;
+    }
+
+    const validationMessage = validateMobile(payload);
+
+    if (validationMessage) {
+      setMobileMessage(validationMessage);
+      return;
+    }
+
+    setMobileStatus("saving");
+    setMobileMessage("");
+
+    try {
+      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, `/api/v1/mobiles/${payload.id}`), {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const savedMobile = normalizeMobile((await response.json()) as MobileView);
+      setMobileDraft(savedMobile);
+      setSelectedMobileId(savedMobile.id ?? "new");
+      setMobileMessage("Mobile updated.");
+      setMobiles((currentMobiles) => upsertMobileForArea(currentMobiles, savedMobile, selectedMobileAreaId));
+    } catch (error) {
+      setMobileMessage(error instanceof Error ? `Could not save mobile: ${error.message}` : "Could not save mobile.");
+    } finally {
+      setMobileStatus("idle");
+    }
+  }
+
+  async function createMobileFromModal() {
+    const payload = normalizeMobile(newMobileDraft);
+    const validationMessage = validateMobile(payload);
+
+    if (validationMessage) {
+      setMobileMessage(validationMessage);
+      return;
+    }
+
+    setMobileStatus("saving");
+    setMobileMessage("");
+
+    try {
+      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, "/api/v1/mobiles"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const savedMobile = normalizeMobile((await response.json()) as MobileView);
+      setMobiles((currentMobiles) => upsertMobileForArea(currentMobiles, savedMobile, selectedMobileAreaId));
+      setMobileDraft(savedMobile);
+      setSelectedMobileId(savedMobile.id ?? "new");
+      setNewMobileDraft(emptyMobileDraft);
+      setIsNewMobileModalOpen(false);
+      setMobileMessage("Mobile created.");
+    } catch (error) {
+      setMobileMessage(error instanceof Error ? `Could not create mobile: ${error.message}` : "Could not create mobile.");
+    } finally {
+      setMobileStatus("idle");
+    }
+  }
+
+  async function saveEditableDocument() {
+    const resource = apiResources.find((entry) => entry.kind === activeKind);
+    const payload = normalizeEditableResourceDocument(editableDocumentDraft, activeKind);
+
+    if (!resource || !editableResourceKinds.includes(activeKind)) {
+      return;
+    }
+
+    if (selectedEditableDocumentId === "new" || !payload.id) {
+      setEditableDocumentMessage(`Select an existing ${resource.label.slice(0, -1).toLowerCase()} to update, or use New.`);
+      return;
+    }
+
+    const validationMessage = validateEditableResourceDocument(payload, resource.label);
+
+    if (validationMessage) {
+      setEditableDocumentMessage(validationMessage);
+      return;
+    }
+
+    setEditableDocumentStatus("saving");
+    setEditableDocumentMessage("");
+
+    try {
+      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, `${resource.endpoint}/${payload.id}`), {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const savedDocument = normalizeEditableResourceDocument((await response.json()) as EditableResourceDocument, activeKind);
+      setEditableDocumentDraft(savedDocument);
+      setSelectedEditableDocumentId(savedDocument.id ?? "new");
+      setEditableDocumentMessage(`${singularResourceLabel(resource.label)} updated.`);
+      setEditableDocuments((currentDocuments) =>
+          upsertEditableResourceDocumentForArea(currentDocuments, savedDocument, selectedEditableAreaId),
+      );
+    } catch (error) {
+      setEditableDocumentMessage(
+          error instanceof Error
+              ? `Could not save ${singularResourceLabel(resource.label).toLowerCase()}: ${error.message}`
+              : `Could not save ${singularResourceLabel(resource.label).toLowerCase()}.`,
+      );
+    } finally {
+      setEditableDocumentStatus("idle");
+    }
+  }
+
+  async function createEditableDocumentFromModal() {
+    const resource = apiResources.find((entry) => entry.kind === activeKind);
+    const payload = normalizeEditableResourceDocument(newEditableDocumentDraft, activeKind);
+
+    if (!resource || !editableResourceKinds.includes(activeKind)) {
+      return;
+    }
+
+    const validationMessage = validateEditableResourceDocument(payload, resource.label);
+
+    if (validationMessage) {
+      setEditableDocumentMessage(validationMessage);
+      return;
+    }
+
+    setEditableDocumentStatus("saving");
+    setEditableDocumentMessage("");
+
+    try {
+      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, resource.endpoint), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const savedDocument = normalizeEditableResourceDocument((await response.json()) as EditableResourceDocument, activeKind);
+      setEditableDocuments((currentDocuments) =>
+          upsertEditableResourceDocumentForArea(currentDocuments, savedDocument, selectedEditableAreaId),
+      );
+      setEditableDocumentDraft(savedDocument);
+      setSelectedEditableDocumentId(savedDocument.id ?? "new");
+      setNewEditableDocumentDraft(getEmptyEditableResourceDraft(activeKind));
+      setIsNewEditableDocumentModalOpen(false);
+      setEditableDocumentMessage(`${singularResourceLabel(resource.label)} created.`);
+    } catch (error) {
+      setEditableDocumentMessage(
+          error instanceof Error
+              ? `Could not create ${singularResourceLabel(resource.label).toLowerCase()}: ${error.message}`
+              : `Could not create ${singularResourceLabel(resource.label).toLowerCase()}.`,
+      );
+    } finally {
+      setEditableDocumentStatus("idle");
+    }
+  }
+
+  async function saveTopLevelDocument() {
+    const resource = apiResources.find((entry) => entry.kind === activeKind);
+    const payload = normalizeEditableResourceDocument(topLevelDocumentDraft, activeKind);
+
+    if (!resource || !topLevelEditableResourceKinds.includes(activeKind)) {
+      return;
+    }
+
+    if (selectedTopLevelDocumentId === "new" || !payload.id) {
+      setTopLevelDocumentMessage(`Select an existing ${singularResourceLabel(resource.label).toLowerCase()} to update, or use New.`);
+      return;
+    }
+
+    const validationMessage = validateEditableResourceDocument(payload, resource.label);
+
+    if (validationMessage) {
+      setTopLevelDocumentMessage(validationMessage);
+      return;
+    }
+
+    setTopLevelDocumentStatus("saving");
+    setTopLevelDocumentMessage("");
+
+    try {
+      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, `${resource.endpoint}/${payload.id}`), {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const savedDocument = normalizeEditableResourceDocument((await response.json()) as EditableResourceDocument, activeKind);
+      setTopLevelDocumentDraft(savedDocument);
+      setSelectedTopLevelDocumentId(savedDocument.id ?? "new");
+      setTopLevelDocumentMessage(`${singularResourceLabel(resource.label)} updated.`);
+      setTopLevelDocuments((currentDocuments) => upsertEditableResourceDocument(currentDocuments, savedDocument));
+    } catch (error) {
+      setTopLevelDocumentMessage(
+          error instanceof Error
+              ? `Could not save ${singularResourceLabel(resource.label).toLowerCase()}: ${error.message}`
+              : `Could not save ${singularResourceLabel(resource.label).toLowerCase()}.`,
+      );
+    } finally {
+      setTopLevelDocumentStatus("idle");
+    }
+  }
+
+  async function createTopLevelDocumentFromModal() {
+    const resource = apiResources.find((entry) => entry.kind === activeKind);
+    const payload = normalizeEditableResourceDocument(newTopLevelDocumentDraft, activeKind);
+
+    if (!resource || !topLevelEditableResourceKinds.includes(activeKind)) {
+      return;
+    }
+
+    const validationMessage = validateEditableResourceDocument(payload, resource.label);
+
+    if (validationMessage) {
+      setTopLevelDocumentMessage(validationMessage);
+      return;
+    }
+
+    setTopLevelDocumentStatus("saving");
+    setTopLevelDocumentMessage("");
+
+    try {
+      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, resource.endpoint), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const savedDocument = normalizeEditableResourceDocument((await response.json()) as EditableResourceDocument, activeKind);
+      setTopLevelDocuments((currentDocuments) => upsertEditableResourceDocument(currentDocuments, savedDocument));
+      setTopLevelDocumentDraft(savedDocument);
+      setSelectedTopLevelDocumentId(savedDocument.id ?? "new");
+      setNewTopLevelDocumentDraft(getEmptyEditableResourceDraft(activeKind));
+      setIsNewTopLevelDocumentModalOpen(false);
+      setTopLevelDocumentMessage(`${singularResourceLabel(resource.label)} created.`);
+    } catch (error) {
+      setTopLevelDocumentMessage(
+          error instanceof Error
+              ? `Could not create ${singularResourceLabel(resource.label).toLowerCase()}: ${error.message}`
+              : `Could not create ${singularResourceLabel(resource.label).toLowerCase()}.`,
+      );
+    } finally {
+      setTopLevelDocumentStatus("idle");
     }
   }
 
@@ -730,6 +1370,7 @@ export function App() {
                             onLoadAreas={loadAreas}
                             onOpenRoom={(room) => {
                               setActiveKind("rooms");
+                              setSelectedRoomAreaId(room.areaId || selectedAreaId);
                               setRooms((currentRooms) => mergeRooms(currentRooms, areaRooms));
                               setRoomDraft(normalizeRoom(room));
                               setSelectedRoomId(room.id ?? "new");
@@ -746,18 +1387,78 @@ export function App() {
                             onCreateNew={() => openNewRoomModal()}
                             onLoadRooms={loadRooms}
                             onSaveRoom={saveRoom}
+                            onSelectRoomArea={selectRoomArea}
                             onSelectRoom={selectRoom}
                             onBrowseToExitDestination={browseToExitDestination}
                             onUpdateRoomDraft={updateRoomDraft}
+                            areas={areas}
                             roomDraft={roomDraft}
                             roomMessage={roomMessage}
                             roomStatus={roomStatus}
                             rooms={rooms}
+                            selectedRoomAreaId={selectedRoomAreaId}
                             selectedRoomId={selectedRoomId}
                         />
                     ) : null}
 
-                    {activeKind !== "areas" && activeKind !== "rooms" ? (
+                    {activeKind === "mobiles" ? (
+                        <MobileDesigner
+                            areas={areas}
+                            mobileDraft={mobileDraft}
+                            mobileMessage={mobileMessage}
+                            mobileStatus={mobileStatus}
+                            mobiles={mobiles}
+                            onCreateNew={openNewMobileModal}
+                            onLoadMobiles={loadMobiles}
+                            onSaveMobile={saveMobile}
+                            onSelectMobile={selectMobile}
+                            onSelectMobileArea={selectMobileArea}
+                            onUpdateMobileDraft={updateMobileDraft}
+                            selectedMobileAreaId={selectedMobileAreaId}
+                            selectedMobileId={selectedMobileId}
+                        />
+                    ) : null}
+
+                    {editableResourceKinds.includes(activeKind) ? (
+                        <EditableResourceDesigner
+                            areas={areas}
+                            documents={editableDocuments}
+                            documentDraft={editableDocumentDraft}
+                            message={editableDocumentMessage}
+                            onCreateNew={openNewEditableDocumentModal}
+                            onLoadDocuments={() => loadEditableDocuments(activeKind, selectedEditableAreaId)}
+                            onSaveDocument={saveEditableDocument}
+                            onSelectArea={selectEditableArea}
+                            onSelectDocument={selectEditableDocument}
+                            onUpdateDocumentDraft={updateEditableDocumentDraft}
+                            resource={activeResource}
+                            selectedAreaId={selectedEditableAreaId}
+                            selectedDocumentId={selectedEditableDocumentId}
+                            status={editableDocumentStatus}
+                        />
+                    ) : null}
+
+                    {topLevelEditableResourceKinds.includes(activeKind) ? (
+                        <TopLevelResourceDesigner
+                            documents={topLevelDocuments}
+                            documentDraft={topLevelDocumentDraft}
+                            message={topLevelDocumentMessage}
+                            onCreateNew={openNewTopLevelDocumentModal}
+                            onLoadDocuments={() => loadTopLevelDocuments(activeKind)}
+                            onSaveDocument={saveTopLevelDocument}
+                            onSelectDocument={selectTopLevelDocument}
+                            onUpdateDocumentDraft={updateTopLevelDocumentDraft}
+                            resource={activeResource}
+                            selectedDocumentId={selectedTopLevelDocumentId}
+                            status={topLevelDocumentStatus}
+                        />
+                    ) : null}
+
+                    {activeKind !== "areas" &&
+                    activeKind !== "rooms" &&
+                    activeKind !== "mobiles" &&
+                    !editableResourceKinds.includes(activeKind) &&
+                    !topLevelEditableResourceKinds.includes(activeKind) ? (
                         <>
                           <div className="resource-summary">
                             <ActiveResourceIcon size={22}/>
@@ -863,28 +1564,43 @@ export function App() {
                         roomDraft={newRoomDraft}
                     />
                 ) : null}
-
-                <section className="resource-grid" aria-label="Resource coverage">
-                  {apiResources
-                      .filter((resource) => resource.kind !== "settings")
-                      .map((resource) => {
-                        const Icon = resource.icon;
-                        return (
-                            <article className="resource-card" key={resource.kind}>
-                              <div className="resource-card-header">
-                                <Icon size={20}/>
-                                <span>{resource.status}</span>
-                              </div>
-                              <h3>{resource.label}</h3>
-                              <p>{resource.summary}</p>
-                              <button type="button" onClick={() => setActiveKind(resource.kind)}>
-                                Open
-                                <ArrowRight size={16}/>
-                              </button>
-                            </article>
-                        );
-                      })}
-                </section>
+                {isNewMobileModalOpen ? (
+                    <MobileCreateModal
+                        fieldNames={mobileFieldNames(mobiles, mobileDraft, newMobileDraft)}
+                        isSaving={mobileStatus === "saving"}
+                        mobileDraft={newMobileDraft}
+                        onClose={() => setIsNewMobileModalOpen(false)}
+                        onSubmit={createMobileFromModal}
+                        onUpdateMobileDraft={updateNewMobileDraft}
+                    />
+                ) : null}
+                {isNewEditableDocumentModalOpen ? (
+                    <EditableResourceCreateModal
+                        fieldNames={editableResourceFieldNames(activeKind, editableDocuments, editableDocumentDraft, newEditableDocumentDraft)}
+                        isSaving={editableDocumentStatus === "saving"}
+                        documentDraft={newEditableDocumentDraft}
+                        onClose={() => setIsNewEditableDocumentModalOpen(false)}
+                        onSubmit={createEditableDocumentFromModal}
+                        onUpdateDocumentDraft={updateNewEditableDocumentDraft}
+                        resource={activeResource}
+                    />
+                ) : null}
+                {isNewTopLevelDocumentModalOpen ? (
+                    <EditableResourceCreateModal
+                        fieldNames={editableResourceFieldNames(
+                            activeKind,
+                            topLevelDocuments,
+                            topLevelDocumentDraft,
+                            newTopLevelDocumentDraft,
+                        )}
+                        isSaving={topLevelDocumentStatus === "saving"}
+                        documentDraft={newTopLevelDocumentDraft}
+                        onClose={() => setIsNewTopLevelDocumentModalOpen(false)}
+                        onSubmit={createTopLevelDocumentFromModal}
+                        onUpdateDocumentDraft={updateNewTopLevelDocumentDraft}
+                        resource={activeResource}
+                    />
+                ) : null}
 
                 <section className="queue-band">
                   <div className="section-heading">
@@ -1062,744 +1778,3 @@ function SettingsPanel({
   );
 }
 
-function AreaDesigner({
-                        areaDraft,
-                        areaMessage,
-                        areaRooms,
-                        areaRoomsStatus,
-                        areaStatus,
-                        areas,
-                        onCreateRoomForArea,
-                        onCreateNew,
-                        onLoadAreas,
-                        onOpenRoom,
-                        onSaveArea,
-                        onSelectArea,
-                        onUpdateAreaDraft,
-                        selectedAreaId,
-                      }: {
-  areaDraft: AreaView;
-  areaMessage: string;
-  areaRooms: RoomView[];
-  areaRoomsStatus: "idle" | "loading";
-  areaStatus: "idle" | "loading" | "saving";
-  areas: AreaView[];
-  onCreateRoomForArea: (areaId: string) => void;
-  onCreateNew: () => void;
-  onLoadAreas: () => void;
-  onOpenRoom: (room: RoomView) => void;
-  onSaveArea: () => void;
-  onSelectArea: (areaId: string) => void;
-  onUpdateAreaDraft: <Value extends keyof AreaView>(key: Value, value: AreaView[Value]) => void;
-  selectedAreaId: string;
-}) {
-  const isSaving = areaStatus === "saving";
-  const isLoading = areaStatus === "loading";
-
-  return (
-      <div className="area-designer">
-        <div className="area-toolbar">
-          <div className="resource-summary">
-            <BookOpen size={22}/>
-            <p>
-              Load existing areas from the Java API, edit their AreaView fields, or create a new
-              area document through the same `/api/v1/areas` controller.
-            </p>
-          </div>
-          <div className="area-toolbar-actions">
-            <button className="secondary-button" type="button" onClick={onLoadAreas} disabled={isLoading}>
-              <RotateCw size={18}/>
-              {isLoading ? "Loading" : "Reload"}
-            </button>
-            <button className="primary-button" type="button" onClick={onCreateNew}>
-              <Plus size={18}/>
-              New Area
-            </button>
-          </div>
-        </div>
-
-        <div className="area-workspace">
-          <aside className="area-list" aria-label="Existing areas">
-            <div className="area-list-heading">
-              <strong>Existing Areas</strong>
-              <span>{areas.length}</span>
-            </div>
-            <button
-                className={selectedAreaId === "new" ? "area-list-item active" : "area-list-item"}
-                type="button"
-                onClick={onCreateNew}
-            >
-              <strong>New area</strong>
-              <span>Create a blank AreaDocument</span>
-            </button>
-            {areas.map((area) => (
-                <button
-                    className={selectedAreaId === area.id ? "area-list-item active" : "area-list-item"}
-                    key={area.id ?? area.name}
-                    type="button"
-                    onClick={() => onSelectArea(area.id ?? "new")}
-                >
-                  <strong>{area.name || "Unnamed area"}</strong>
-                  <span>{area.vnum || area.id || "No vnum"}</span>
-                </button>
-            ))}
-          </aside>
-
-          <form className="area-form">
-            <label>
-              Id
-              <input value={areaDraft.id ?? ""} disabled placeholder="Assigned by API"/>
-            </label>
-            <label>
-              Name
-              <input
-                  value={areaDraft.name}
-                  onChange={(event) => onUpdateAreaDraft("name", event.target.value)}
-                  placeholder="Midgaard"
-              />
-            </label>
-            <label>
-              Author
-              <input
-                  value={areaDraft.author}
-                  onChange={(event) => onUpdateAreaDraft("author", event.target.value)}
-                  placeholder="Builder name"
-              />
-            </label>
-            <label>
-              Vnum
-              <input
-                  value={areaDraft.vnum}
-                  onChange={(event) => onUpdateAreaDraft("vnum", event.target.value)}
-                  placeholder="3000-3999"
-              />
-            </label>
-            <label className="wide-field">
-              Suggested Level Range
-              <input
-                  value={areaDraft.suggestedLevelRange}
-                  onChange={(event) => onUpdateAreaDraft("suggestedLevelRange", event.target.value)}
-                  placeholder="1-15"
-              />
-            </label>
-
-            {areaListFields.map((field) => (
-                <label className="area-list-field" key={field}>
-                  {startCase(field)}
-                  <textarea
-                      value={listToText(areaDraft[field])}
-                      onChange={(event) => onUpdateAreaDraft(field, textToList(event.target.value))}
-                      rows={4}
-                      placeholder="One id or vnum per line"
-                  />
-                </label>
-            ))}
-          </form>
-        </div>
-
-        {selectedAreaId !== "new" ? (
-            <section className="area-room-panel">
-              <div className="area-room-panel-heading">
-                <div>
-                  <strong>Rooms In This Area</strong>
-                  <span>
-                {areaRoomsStatus === "loading" ? "Loading rooms" : `${areaRooms.length} rooms loaded`}
-              </span>
-                </div>
-                <button
-                    className="primary-button"
-                    type="button"
-                    onClick={() => onCreateRoomForArea(selectedAreaId)}
-                >
-                  <Plus size={18}/>
-                  New Room
-                </button>
-              </div>
-              {areaRooms.length > 0 ? (
-                  <div className="area-room-grid">
-                    {areaRooms.map((room) => (
-                        <article className="area-room-card" key={room.id ?? room.vnum ?? room.name}>
-                          <div>
-                            <strong>{room.name || "Unnamed room"}</strong>
-                            <span>{room.vnum || "No vnum"}</span>
-                          </div>
-                          <p>{room.description || "No description."}</p>
-                          <button className="secondary-button" type="button" onClick={() => onOpenRoom(room)}>
-                            <ArrowRight size={16}/>
-                            Edit Room
-                          </button>
-                        </article>
-                    ))}
-                  </div>
-              ) : (
-                  <p className="empty-exits">No rooms returned for this area.</p>
-              )}
-            </section>
-        ) : null}
-
-        <div className="area-actions">
-          {areaMessage ? <span className="area-message">{areaMessage}</span> : <span/>}
-          <button className="primary-button" type="button" onClick={onSaveArea} disabled={isSaving}>
-            <Save size={18}/>
-            {isSaving ? "Saving" : selectedAreaId === "new" ? "Create Area" : "Update Area"}
-          </button>
-        </div>
-      </div>
-  );
-}
-
-function RoomDesigner({
-                        onBrowseToExitDestination,
-                        onCreateNew,
-                        onLoadRooms,
-                        onSaveRoom,
-                        onSelectRoom,
-                        onUpdateRoomDraft,
-                        roomDraft,
-                        roomMessage,
-                        roomStatus,
-                        rooms,
-                        selectedRoomId,
-                      }: {
-  onBrowseToExitDestination: (exitView: ExitView) => void;
-  onCreateNew: () => void;
-  onLoadRooms: () => void;
-  onSaveRoom: () => void;
-  onSelectRoom: (roomId: string) => void;
-  onUpdateRoomDraft: <Value extends keyof RoomView>(key: Value, value: RoomView[Value]) => void;
-  roomDraft: RoomView;
-  roomMessage: string;
-  roomStatus: "idle" | "loading" | "saving";
-  rooms: RoomView[];
-  selectedRoomId: string;
-}) {
-  const isSaving = roomStatus === "saving";
-  const isLoading = roomStatus === "loading";
-  const exitViews = roomDraft.exits.map(parseExitView);
-
-  return (
-      <div className="area-designer">
-        <div className="area-toolbar">
-          <div className="resource-summary">
-            <BookOpen size={22}/>
-            <p>
-              Load existing rooms from the Java API, edit their RoomView fields, or create a new
-              room document through the `/api/v1/rooms` controller.
-            </p>
-          </div>
-          <div className="area-toolbar-actions">
-            <button className="secondary-button" type="button" onClick={onLoadRooms} disabled={isLoading}>
-              <RotateCw size={18}/>
-              {isLoading ? "Loading" : "Reload"}
-            </button>
-            <button className="primary-button" type="button" onClick={onCreateNew}>
-              <Plus size={18}/>
-              New Room
-            </button>
-          </div>
-        </div>
-
-        <div className="area-workspace">
-          <aside className="area-list" aria-label="Existing rooms">
-            <div className="area-list-heading">
-              <strong>Existing Rooms</strong>
-              <span>{rooms.length}</span>
-            </div>
-            {rooms.map((room) => (
-                <button
-                    className={selectedRoomId === room.id ? "area-list-item active" : "area-list-item"}
-                    key={room.id ?? room.vnum ?? room.name}
-                    type="button"
-                    onClick={() => onSelectRoom(room.id ?? "new")}
-                >
-                  <strong>{room.name || "Unnamed room"}</strong>
-                  <span>{room.vnum || room.areaId || room.id || "No vnum"}</span>
-                </button>
-            ))}
-          </aside>
-
-          {selectedRoomId === "new" ? (
-              <div className="empty-editor-state">
-                <BookOpen size={28}/>
-                <strong>Select a room to edit</strong>
-                <span>Create uses the New Room popup so unsaved rooms do not live in the page form.</span>
-                <button className="primary-button" type="button" onClick={onCreateNew}>
-                  <Plus size={18}/>
-                  New Room
-                </button>
-              </div>
-          ) : (
-              <form className="area-form">
-                <label>
-                  Id
-                  <input value={roomDraft.id ?? ""} disabled placeholder="Assigned by API"/>
-                </label>
-                <label>
-                  Area Id
-                  <input
-                      value={roomDraft.areaId}
-                      onChange={(event) => onUpdateRoomDraft("areaId", event.target.value)}
-                      placeholder="Area document id"
-                  />
-                </label>
-                <label>
-                  Vnum
-                  <input
-                      value={roomDraft.vnum}
-                      onChange={(event) => onUpdateRoomDraft("vnum", event.target.value)}
-                      placeholder="3001"
-                  />
-                </label>
-                <label>
-                  Name
-                  <input
-                      value={roomDraft.name}
-                      onChange={(event) => onUpdateRoomDraft("name", event.target.value)}
-                      placeholder="Temple Square"
-                  />
-                </label>
-                <label className="wide-field">
-                  Description
-                  <textarea
-                      value={roomDraft.description}
-                      onChange={(event) => onUpdateRoomDraft("description", event.target.value)}
-                      rows={5}
-                  />
-                </label>
-                <label className="wide-field">
-                  Extra Description
-                  <textarea
-                      value={roomDraft.extraDescription}
-                      onChange={(event) => onUpdateRoomDraft("extraDescription", event.target.value)}
-                      rows={4}
-                  />
-                </label>
-
-                <div className="room-toggle-row">
-                  <label className="proxy-toggle">
-                    <input
-                        type="checkbox"
-                        checked={roomDraft.pvp}
-                        onChange={(event) => onUpdateRoomDraft("pvp", event.target.checked)}
-                    />
-                    <span>PVP</span>
-                  </label>
-                  <label className="proxy-toggle">
-                    <input
-                        type="checkbox"
-                        checked={roomDraft.spawn}
-                        onChange={(event) => onUpdateRoomDraft("spawn", event.target.checked)}
-                    />
-                    <span>Spawn</span>
-                  </label>
-                </div>
-
-                {roomNumberFields.map((field) => (
-                    <label key={field}>
-                      {startCase(field)}
-                      <input
-                          type="number"
-                          value={roomDraft[field]}
-                          onChange={(event) => onUpdateRoomDraft(field, Number(event.target.value))}
-                      />
-                    </label>
-                ))}
-
-                <div className="exit-pane wide-field">
-                  <div className="exit-pane-heading">
-                    <div>
-                      <strong>Exits</strong>
-                      <span>{exitViews.length} directions</span>
-                    </div>
-                  </div>
-                  {exitViews.length > 0 ? (
-                      <div className="exit-grid">
-                        {exitViews.map((exitView, index) => (
-                  <article className="exit-card" key={`${exitView.direction}-${exitView.to_room_id}-${index}`}>
-                    <div className="exit-card-heading">
-                      <strong>{directionLabel(exitView.direction)}</strong>
-                      <span>{exitView.to_room_vnum || "No vnum"}</span>
-                    </div>
-                    {exitView.parseError ? (
-                      <p className="exit-error">{exitView.parseError}</p>
-                    ) : (
-                      <>
-                        <dl>
-                          <div>
-                            <dt>Destination</dt>
-                            <dd>{exitView.to_room_id || "None"}</dd>
-                          </div>
-                          <div>
-                            <dt>Keyword</dt>
-                            <dd>{exitView.keyword || "None"}</dd>
-                          </div>
-                          <div>
-                            <dt>Flags</dt>
-                            <dd>{exitView.exit_flags}</dd>
-                          </div>
-                          <div>
-                            <dt>Key</dt>
-                            <dd>{exitView.key}</dd>
-                          </div>
-                        </dl>
-                        {exitView.description ? <p>{exitView.description}</p> : null}
-                        <button
-                          className="secondary-button"
-                          type="button"
-                          onClick={() => onBrowseToExitDestination(exitView)}
-                        >
-                          <ArrowRight size={16} />
-                          Open Destination
-                        </button>
-                      </>
-                    )}
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="empty-exits">No exits defined for this room.</p>
-            )}
-            <details className="raw-exits">
-              <summary>Raw exit payload</summary>
-              <textarea
-                value={listToText(roomDraft.exits)}
-                onChange={(event) => onUpdateRoomDraft("exits", textToLines(event.target.value))}
-                rows={6}
-                placeholder="One serialized Exit JSON object per line"
-              />
-            </details>
-          </div>
-
-          <label className="area-list-field">
-            Mobiles
-            <textarea
-              value={mapToText(roomDraft.mobiles)}
-              onChange={(event) => onUpdateRoomDraft("mobiles", textToMap(event.target.value))}
-              rows={4}
-              placeholder="mobileId=count, one per line"
-            />
-          </label>
-        </form>
-        )}
-      </div>
-
-      <div className="area-actions">
-        {roomMessage ? <span className="area-message">{roomMessage}</span> : <span />}
-        {selectedRoomId !== "new" ? (
-          <button className="primary-button" type="button" onClick={onSaveRoom} disabled={isSaving}>
-            <Save size={18} />
-            {isSaving ? "Saving" : "Update Room"}
-          </button>
-        ) : (
-          <button className="primary-button" type="button" onClick={onCreateNew}>
-            <Plus size={18} />
-            New Room
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RoomCreateModal({
-  isSaving,
-  onClose,
-  onSubmit,
-  onUpdateRoomDraft,
-  roomDraft,
-}: {
-  isSaving: boolean;
-  onClose: () => void;
-  onSubmit: () => void;
-  onUpdateRoomDraft: <Value extends keyof RoomView>(key: Value, value: RoomView[Value]) => void;
-  roomDraft: RoomView;
-}) {
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="new-room-title">
-        <div className="modal-heading">
-          <div>
-            <span>/api/v1/rooms</span>
-            <h3 id="new-room-title">New Room</h3>
-          </div>
-          <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Close">
-            <X size={20} />
-          </button>
-        </div>
-
-        <form className="area-form modal-form">
-          <label>
-            Area Id
-            <input
-              value={roomDraft.areaId}
-              onChange={(event) => onUpdateRoomDraft("areaId", event.target.value)}
-              placeholder="Area document id"
-            />
-          </label>
-          <label>
-            Vnum
-            <input
-              value={roomDraft.vnum}
-              onChange={(event) => onUpdateRoomDraft("vnum", event.target.value)}
-              placeholder="3001"
-            />
-          </label>
-          <label className="wide-field">
-            Name
-            <input
-              value={roomDraft.name}
-              onChange={(event) => onUpdateRoomDraft("name", event.target.value)}
-              placeholder="Temple Square"
-            />
-          </label>
-          <label className="wide-field">
-            Description
-            <textarea
-              value={roomDraft.description}
-              onChange={(event) => onUpdateRoomDraft("description", event.target.value)}
-              rows={4}
-            />
-          </label>
-          <label className="wide-field">
-            Extra Description
-            <textarea
-              value={roomDraft.extraDescription}
-              onChange={(event) => onUpdateRoomDraft("extraDescription", event.target.value)}
-              rows={3}
-            />
-          </label>
-          <div className="room-toggle-row">
-            <label className="proxy-toggle">
-              <input
-                type="checkbox"
-                checked={roomDraft.pvp}
-                onChange={(event) => onUpdateRoomDraft("pvp", event.target.checked)}
-              />
-              <span>PVP</span>
-            </label>
-            <label className="proxy-toggle">
-              <input
-                type="checkbox"
-                checked={roomDraft.spawn}
-                onChange={(event) => onUpdateRoomDraft("spawn", event.target.checked)}
-              />
-              <span>Spawn</span>
-            </label>
-          </div>
-          {roomNumberFields.map((field) => (
-            <label key={field}>
-              {startCase(field)}
-              <input
-                type="number"
-                value={roomDraft[field]}
-                onChange={(event) => onUpdateRoomDraft(field, Number(event.target.value))}
-              />
-            </label>
-          ))}
-        </form>
-
-        <div className="modal-actions">
-          <button className="secondary-button" type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="primary-button" type="button" onClick={onSubmit} disabled={isSaving}>
-            <Save size={18} />
-            {isSaving ? "Creating" : "Create Room"}
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function normalizeArea(area: AreaView): AreaView {
-  return {
-    id: area.id,
-    author: area.author ?? "",
-    name: area.name ?? "",
-    vnum: area.vnum ?? "",
-    suggestedLevelRange: area.suggestedLevelRange ?? "",
-    rooms: area.rooms ?? [],
-    mobiles: area.mobiles ?? [],
-    objects: area.objects ?? [],
-    shops: area.shops ?? [],
-    resets: area.resets ?? [],
-    specials: area.specials ?? [],
-  };
-}
-
-function normalizeRoom(room: RoomView): RoomView {
-  return {
-    id: room.id,
-    areaId: room.areaId ?? "",
-    vnum: room.vnum ?? "",
-    name: room.name ?? "",
-    description: room.description ?? "",
-    extraDescription: room.extraDescription ?? "",
-    pvp: Boolean(room.pvp),
-    spawn: Boolean(room.spawn),
-    spawnTimer: Number(room.spawnTimer ?? 0),
-    spawnTime: Number(room.spawnTime ?? 0),
-    teleDelay: Number(room.teleDelay ?? 0),
-    roomFlags: Number(room.roomFlags ?? 0),
-    sectorType: Number(room.sectorType ?? 0),
-    exits: room.exits ?? [],
-    mobiles: room.mobiles ?? {},
-  };
-}
-
-function parseExitView(rawExit: string): ExitView {
-  try {
-    const parsed = parseSerializedExit(rawExit);
-
-    return {
-      direction: Number(parsed.direction ?? -1),
-      description: String(parsed.description ?? ""),
-      keyword: String(parsed.keyword ?? ""),
-      exit_flags: Number(parsed.exit_flags ?? 0),
-      key: Number(parsed.key ?? 0),
-      to_room_vnum: Number(parsed.to_room_vnum ?? 0),
-      to_room_id: String(parsed.to_room_id ?? ""),
-      room_id: String(parsed.room_id ?? ""),
-      raw: rawExit,
-    };
-  } catch (error) {
-    return {
-      direction: -1,
-      description: "",
-      keyword: "",
-      exit_flags: 0,
-      key: 0,
-      to_room_vnum: 0,
-      to_room_id: "",
-      room_id: "",
-      raw: rawExit,
-      parseError: error instanceof Error ? error.message : "Unable to parse exit.",
-    };
-  }
-}
-
-function parseSerializedExit(rawExit: string): Record<string, unknown> {
-  try {
-    return JSON.parse(rawExit) as Record<string, unknown>;
-  } catch {
-    const jsonLikeValue = rawExit
-      .replace(/\bNone\b/g, "null")
-      .replace(/\bTrue\b/g, "true")
-      .replace(/\bFalse\b/g, "false")
-      .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_match, value: string) => {
-        return JSON.stringify(value.replace(/\\'/g, "'"));
-      });
-
-    return JSON.parse(jsonLikeValue) as Record<string, unknown>;
-  }
-}
-
-function findRoomForExit(rooms: RoomView[], exitView: ExitView) {
-  return rooms.find(
-    (room) =>
-      (exitView.to_room_id && room.id === exitView.to_room_id) ||
-      (exitView.to_room_vnum && String(room.vnum) === String(exitView.to_room_vnum)),
-  );
-}
-
-function directionLabel(direction: number) {
-  return directionNames[direction] ?? `direction ${direction}`;
-}
-
-function upsertArea(areas: AreaView[], savedArea: AreaView) {
-  const existingIndex = areas.findIndex((area) => area.id === savedArea.id);
-
-  if (existingIndex === -1) {
-    return [...areas, savedArea].sort(compareAreas);
-  }
-
-  return areas.map((area, index) => (index === existingIndex ? savedArea : area)).sort(compareAreas);
-}
-
-function upsertRoom(rooms: RoomView[], savedRoom: RoomView) {
-  const existingIndex = rooms.findIndex((room) => room.id === savedRoom.id);
-
-  if (existingIndex === -1) {
-    return [...rooms, savedRoom].sort(compareRooms);
-  }
-
-  return rooms.map((room, index) => (index === existingIndex ? savedRoom : room)).sort(compareRooms);
-}
-
-function upsertRoomIfSameArea(rooms: RoomView[], savedRoom: RoomView, areaId: string) {
-  if (areaId === "new" || savedRoom.areaId !== areaId) {
-    return rooms;
-  }
-
-  return upsertRoom(rooms, savedRoom);
-}
-
-function mergeRooms(existingRooms: RoomView[], incomingRooms: RoomView[]) {
-  return incomingRooms.reduce((mergedRooms, room) => upsertRoom(mergedRooms, room), existingRooms);
-}
-
-function validateRoom(room: RoomView) {
-  if (!room.areaId.trim()) {
-    return "Area id is required.";
-  }
-
-  if (!room.name.trim()) {
-    return "Room name is required.";
-  }
-
-  return "";
-}
-
-function compareAreas(left: AreaView, right: AreaView) {
-  return left.name.localeCompare(right.name);
-}
-
-function compareRooms(left: RoomView, right: RoomView) {
-  return (left.vnum || left.name).localeCompare(right.vnum || right.name);
-}
-
-function listToText(value: string[]) {
-  return value.join("\n");
-}
-
-function textToList(value: string) {
-  return value
-    .split(/\r?\n|,/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function textToLines(value: string) {
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function mapToText(value: Record<string, string>) {
-  return Object.entries(value)
-    .map(([key, mapValue]) => `${key}=${mapValue}`)
-    .join("\n");
-}
-
-function textToMap(value: string) {
-  return value
-    .split(/\r?\n|,/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .reduce<Record<string, string>>((result, item) => {
-      const [key, ...valueParts] = item.split("=");
-      const trimmedKey = key.trim();
-
-      if (trimmedKey) {
-        result[trimmedKey] = valueParts.join("=").trim();
-      }
-
-      return result;
-    }, {});
-}
-
-function startCase(value: string) {
-  return value.slice(0, 1).toUpperCase() + value.slice(1);
-}

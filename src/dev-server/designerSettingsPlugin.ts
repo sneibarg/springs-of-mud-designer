@@ -1,3 +1,4 @@
+// @ts-ignore
 import type { ViteDevServer, Plugin } from "vite";
 import { registerAuthRoutes } from "./auth";
 import { readRequestBody, sendJson } from "./http";

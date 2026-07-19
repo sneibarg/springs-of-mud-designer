@@ -1,4 +1,4 @@
-import type { ApiHealth, ApiResource } from "./domain";
+import type { ApiHealth, ApiResource } from "./domain/types";
 
 export const DESIGNER_SETTINGS_STORAGE_KEY = "som-designer-settings";
 export const API_BASE_URL_STORAGE_KEY = "som-designer-api-base-url";
