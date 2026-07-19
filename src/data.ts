@@ -222,11 +222,11 @@ export const apiResources: ApiResource[] = [
   },
   {
     kind: "socials",
-    label: "Socials",
+    label: "Emotes",
     endpoint: "/api/v1/socials",
     icon: resourceIcons.MessageSquareText,
     status: "Ready",
-    summary: "Social command message variants for no-arg, target-found, not-found, and self-target cases.",
+    summary: "Emote command message variants for no-arg, target-found, not-found, and self-target cases.",
     fields: ["name", "charNoArg", "othersNoArg", "charFound", "othersFound", "victFound", "charNotFound"],
   },
   {

@@ -20,11 +20,14 @@ import {
   AreaDesigner,
   EditableResourceCreateModal,
   EditableResourceDesigner,
+  GameDataDesigner,
   MobileCreateModal,
   MobileDesigner,
   RoomCreateModal,
   RoomDesigner,
   TopLevelResourceDesigner,
+  abilitiesNavItem,
+  abilityChildNavItems,
   areaChildNavItems,
   areaNavItem,
   areaScopedDraftKinds,
@@ -41,6 +44,7 @@ import {
   findRoomForExit,
   getEmptyEditableResourceDraft,
   mergeRooms,
+  mobileChildNavItems,
   mobileFieldNames,
   navItems,
   normalizeArea,
@@ -137,6 +141,10 @@ export function App() {
   const [isNewTopLevelDocumentModalOpen, setIsNewTopLevelDocumentModalOpen] = useState(false);
   const [topLevelDocumentStatus, setTopLevelDocumentStatus] = useState<"idle" | "loading" | "saving">("idle");
   const [topLevelDocumentMessage, setTopLevelDocumentMessage] = useState("");
+  const [gameDocuments, setGameDocuments] = useState<EditableResourceDocument[]>([]);
+  const [selectedGameDocumentId, setSelectedGameDocumentId] = useState("");
+  const [gameStatus, setGameStatus] = useState<"idle" | "loading">("idle");
+  const [gameMessage, setGameMessage] = useState("");
 
   const activeResource = useMemo(
       () => apiResources.find((resource) => resource.kind === activeKind) ?? apiResources[0],
@@ -589,6 +597,58 @@ export function App() {
     setNewTopLevelDocumentDraft(getEmptyEditableResourceDraft(activeKind));
     loadTopLevelDocuments(activeKind);
   }, [activeKind, authSession.authenticated, loadTopLevelDocuments, selectedTopLevelDocumentId]);
+
+  const loadGameDocuments = useCallback(async () => {
+    const resource = apiResources.find((entry) => entry.kind === "game");
+
+    if (!resource) {
+      setGameDocuments([]);
+      return;
+    }
+
+    setGameStatus("loading");
+    setGameMessage("");
+
+    try {
+      const response = await fetch(buildApiUrl(apiBaseUrl, useDevProxy, resource.endpoint));
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const loadedDocuments = ((await response.json()) as EditableResourceDocument[])
+          .map((document) => normalizeEditableResourceDocument(document, "game"))
+          .sort(compareEditableResourceDocuments);
+      setGameDocuments(loadedDocuments);
+      setGameMessage(`Loaded ${loadedDocuments.length} ${resource.label.toLowerCase()}.`);
+
+      setSelectedGameDocumentId((currentDocumentId) => {
+        if (currentDocumentId && loadedDocuments.some((document) => document.id === currentDocumentId)) {
+          return currentDocumentId;
+        }
+
+        return loadedDocuments[0]?.id ?? "";
+      });
+    } catch (error) {
+      setGameDocuments([]);
+      setSelectedGameDocumentId("");
+      setGameMessage(
+          error instanceof Error
+              ? `Could not load game data: ${error.message}`
+              : "Could not load game data.",
+      );
+    } finally {
+      setGameStatus("idle");
+    }
+  }, [apiBaseUrl, useDevProxy]);
+
+  useEffect(() => {
+    if (!authSession.authenticated || activeKind !== "game") {
+      return;
+    }
+
+    loadGameDocuments();
+  }, [activeKind, authSession.authenticated, loadGameDocuments]);
 
   function selectArea(areaId: string) {
     setSelectedAreaId(areaId);
@@ -1248,7 +1308,9 @@ export function App() {
                 const resource = apiResources.find((entry) => entry.kind === areaNavItem.id);
                 const Icon = resource?.icon ?? CircleDashed;
                 const selected = areaNavItem.id === activeKind;
-                const childSelected = areaChildNavItems.some((item) => item.id === activeKind);
+                const childSelected =
+                    areaChildNavItems.some((item) => item.id === activeKind) ||
+                    mobileChildNavItems.some((item) => item.id === activeKind);
 
                 return (
                     <button
@@ -1266,6 +1328,75 @@ export function App() {
               })()}
               <div className="sub-nav" aria-label="Area resources">
                 {areaChildNavItems.map((item) => {
+                  const resource = apiResources.find((entry) => entry.kind === item.id);
+                  const Icon = resource?.icon ?? CircleDashed;
+                  const nestedItems = item.id === "mobiles" ? mobileChildNavItems : [];
+                  const nestedSelected = nestedItems.some((nestedItem) => nestedItem.id === activeKind);
+                  const selected = item.id === activeKind;
+
+                  return (
+                      <div className="nested-nav-group" key={item.id}>
+                        <button
+                            className={
+                              selected || nestedSelected
+                                  ? "nav-button sub-nav-button active"
+                                  : "nav-button sub-nav-button"
+                            }
+                            onClick={() => {
+                              setActiveKind(item.id);
+                              updateDraft("kind", item.id);
+                            }}
+                            type="button"
+                        >
+                          <Icon size={16}/>
+                          <span>{item.label}</span>
+                        </button>
+                        {nestedItems.length > 0 ? (
+                            <div className="sub-nav nested-sub-nav" aria-label={`${item.label} resources`}>
+                              {nestedItems.map((nestedItem) => {
+                                const nestedResource = apiResources.find((entry) => entry.kind === nestedItem.id);
+                                const NestedIcon = nestedResource?.icon ?? CircleDashed;
+                                const isSelected = nestedItem.id === activeKind;
+
+                                return (
+                                    <button
+                                        className={
+                                          isSelected
+                                              ? "nav-button sub-nav-button nested-sub-nav-button active"
+                                              : "nav-button sub-nav-button nested-sub-nav-button"
+                                        }
+                                        key={nestedItem.id}
+                                        onClick={() => {
+                                          setActiveKind(nestedItem.id);
+                                          updateDraft("kind", nestedItem.id);
+                                        }}
+                                        type="button"
+                                    >
+                                      <NestedIcon size={15}/>
+                                      <span>{nestedItem.label}</span>
+                                    </button>
+                                );
+                              })}
+                            </div>
+                        ) : null}
+                      </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="nav-group">
+              <div
+                  className={
+                    abilityChildNavItems.some((item) => item.id === activeKind)
+                        ? "nav-section-label active"
+                        : "nav-section-label"
+                  }
+              >
+                {abilitiesNavItem.label}
+              </div>
+              <div className="sub-nav" aria-label="Ability resources">
+                {abilityChildNavItems.map((item) => {
                   const resource = apiResources.find((entry) => entry.kind === item.id);
                   const Icon = resource?.icon ?? CircleDashed;
                   const selected = item.id === activeKind;
@@ -1501,9 +1632,23 @@ export function App() {
                         />
                     ) : null}
 
+                    {activeKind === "game" ? (
+                        <GameDataDesigner
+                            documents={gameDocuments}
+                            message={gameMessage}
+                            onLoadDocuments={loadGameDocuments}
+                            onSelectDocument={setSelectedGameDocumentId}
+                            resource={activeResource}
+                            selectedDocument={gameDocuments.find((document) => document.id === selectedGameDocumentId)}
+                            selectedDocumentId={selectedGameDocumentId}
+                            status={gameStatus}
+                        />
+                    ) : null}
+
                     {activeKind !== "areas" &&
                     activeKind !== "rooms" &&
                     activeKind !== "mobiles" &&
+                    activeKind !== "game" &&
                     !editableResourceKinds.includes(activeKind) &&
                     !topLevelEditableResourceKinds.includes(activeKind) ? (
                         <>

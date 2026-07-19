@@ -239,13 +239,18 @@ export function validateEditableResourceDocument(document: EditableResourceDocum
     return "Area id is required.";
   }
 
+  if (label === "Help" && !String(document.keyword ?? "").trim()) {
+    return "Help keyword is required.";
+  }
+
   if (
       (label === "Items" ||
           label === "Classes" ||
           label === "Races" ||
           label === "Skills" ||
           label === "Spells" ||
-          label === "Commands") &&
+          label === "Commands" ||
+          label === "Emotes") &&
       !String(document.name ?? "").trim()
   ) {
     return `${singularResourceLabel(label)} name is required.`;
@@ -392,6 +397,10 @@ export function singularResourceLabel(label: string) {
     return "Reset";
   }
 
+  if (label === "Specials") {
+    return "Special";
+  }
+
   if (label === "Classes") {
     return "Class";
   }
@@ -402,6 +411,14 @@ export function singularResourceLabel(label: string) {
 
   if (label === "Commands") {
     return "Command";
+  }
+
+  if (label === "Emotes") {
+    return "Emote";
+  }
+
+  if (label === "Help") {
+    return "Help";
   }
 
   return label.endsWith("s") ? label.slice(0, -1) : label;
@@ -418,7 +435,19 @@ export function documentDisplayName(document: EditableResourceDocument, kind: Fe
         .join(" ") || "Unnamed reset";
   }
 
-  if (kind === "classes" || kind === "skills" || kind === "spells" || kind === "commands") {
+  if (kind === "specials") {
+    return String(document.name ?? document.mobVnum ?? document.id ?? "Unnamed special");
+  }
+
+  if (kind === "helps") {
+    return String(document.keyword ?? document.id ?? "Unnamed help");
+  }
+
+  if (kind === "game") {
+    return String(document.kind ?? document.id ?? "Unnamed game data");
+  }
+
+  if (kind === "classes" || kind === "skills" || kind === "spells" || kind === "commands" || kind === "socials") {
     return String(document.name ?? document.whoName ?? document.id ?? "Unnamed class");
   }
 
@@ -438,6 +467,18 @@ export function documentSecondaryLabel(document: EditableResourceDocument, kind:
     return String(document.comment ?? document.id ?? "No comment");
   }
 
+  if (kind === "specials") {
+    return String(document.mobVnum ?? document.comment ?? document.id ?? "No mob vnum");
+  }
+
+  if (kind === "helps") {
+    return `Level ${document.level ?? 0}`;
+  }
+
+  if (kind === "game") {
+    return String(document.status ?? document.id ?? "No status");
+  }
+
   if (kind === "classes") {
     return String(document.whoName ?? document.primaryAttribute ?? document.id ?? "No who name");
   }
@@ -452,6 +493,10 @@ export function documentSecondaryLabel(document: EditableResourceDocument, kind:
 
   if (kind === "commands") {
     return String(document.usage ?? document.role ?? document.id ?? "No usage");
+  }
+
+  if (kind === "socials") {
+    return String(document.charNoArg ?? document.othersNoArg ?? document.id ?? "No emote text");
   }
 
   if (kind === "races") {

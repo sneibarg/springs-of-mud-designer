@@ -3,11 +3,7 @@ import type { AreaView, EditableResourceDocument, FeatureKind, MobileView, RoomV
 export const navItems = [
   { id: "classes" as FeatureKind, label: "Classes" },
   { id: "races" as FeatureKind, label: "Races" },
-  { id: "skills" as FeatureKind, label: "Skills" },
-  { id: "spells" as FeatureKind, label: "Spells" },
-  { id: "commands" as FeatureKind, label: "Commands" },
   { id: "helps" as FeatureKind, label: "Help" },
-  { id: "socials" as FeatureKind, label: "Socials" },
   { id: "notes" as FeatureKind, label: "Notes" },
   { id: "game" as FeatureKind, label: "Game" },
 ];
@@ -20,7 +16,19 @@ export const areaChildNavItems = [
   { id: "items" as FeatureKind, label: "Items" },
   { id: "shops" as FeatureKind, label: "Shops" },
   { id: "resets" as FeatureKind, label: "Resets" },
+];
+
+export const mobileChildNavItems = [
   { id: "specials" as FeatureKind, label: "Specials" },
+];
+
+export const abilitiesNavItem = { label: "Abilities" };
+
+export const abilityChildNavItems = [
+  { id: "commands" as FeatureKind, label: "Commands" },
+  { id: "spells" as FeatureKind, label: "Spells" },
+  { id: "skills" as FeatureKind, label: "Skills" },
+  { id: "socials" as FeatureKind, label: "Emotes" },
 ];
 
 export const emptyAreaDraft: AreaView = {
@@ -58,8 +66,16 @@ export const emptyRoomDraft: RoomView = {
 export const roomNumberFields = ["spawnTimer", "spawnTime", "teleDelay", "roomFlags", "sectorType"] as const;
 
 export const directionNames = ["north", "east", "south", "west", "up", "down"];
-export const editableResourceKinds: FeatureKind[] = ["items", "shops", "resets"];
-export const topLevelEditableResourceKinds: FeatureKind[] = ["classes", "races", "skills", "spells", "commands"];
+export const editableResourceKinds: FeatureKind[] = ["items", "shops", "resets", "specials"];
+export const topLevelEditableResourceKinds: FeatureKind[] = [
+  "classes",
+  "races",
+  "skills",
+  "spells",
+  "commands",
+  "socials",
+  "helps",
+];
 export const areaScopedDraftKinds: FeatureKind[] = ["areas", "rooms", "mobiles", ...editableResourceKinds];
 
 export const emptyMobileDraft: MobileView = {
@@ -138,6 +154,13 @@ export const emptyEditableResourceDrafts: Record<string, EditableResourceDocumen
     arg3: "",
     arg4: "",
     comment: "",
+  },
+  specials: {
+    areaId: "",
+    mobVnum: "",
+    name: "",
+    comment: "",
+    specialFunction: [],
   },
   classes: {
     name: "",
@@ -223,6 +246,41 @@ export const emptyEditableResourceDrafts: Record<string, EditableResourceDocumen
     pipeline: false,
     maxArguments: 0,
   },
+  socials: {
+    name: "",
+    charNoArg: "",
+    othersNoArg: "",
+    charFound: "",
+    othersFound: "",
+    victFound: "",
+    charNotFound: "",
+    charAuto: "",
+    othersAuto: "",
+  },
+  helps: {
+    level: 0,
+    keyword: "",
+    text: "",
+  },
+  game: {
+    kind: "",
+    status: "",
+    version: {},
+    enums: {},
+    attributeBonuses: {},
+    classes: {},
+    races: {},
+    pcRaces: {},
+    wiznetTable: {},
+    groups: {},
+    titles: {},
+    itemTable: {},
+    weapons: {},
+    attacks: {},
+    liquids: {},
+    integrity: {},
+    denyList: [],
+  },
 };
 
 export const preferredEditableResourceFields: Record<string, string[]> = {
@@ -265,6 +323,7 @@ export const preferredEditableResourceFields: Record<string, string[]> = {
     "comment",
   ],
   resets: ["id", "areaId", "command", "arg1", "arg2", "arg3", "arg4", "comment"],
+  specials: ["id", "areaId", "mobVnum", "name", "comment", "specialFunction"],
   classes: [
     "id",
     "name",
@@ -353,5 +412,38 @@ export const preferredEditableResourceFields: Record<string, string[]> = {
     "enabled",
     "pipeline",
     "maxArguments",
+  ],
+  socials: [
+    "id",
+    "name",
+    "charNoArg",
+    "othersNoArg",
+    "charFound",
+    "othersFound",
+    "victFound",
+    "charNotFound",
+    "charAuto",
+    "othersAuto",
+  ],
+  helps: ["id", "level", "keyword", "text"],
+  game: [
+    "id",
+    "kind",
+    "status",
+    "version",
+    "enums",
+    "attributeBonuses",
+    "classes",
+    "races",
+    "pcRaces",
+    "wiznetTable",
+    "groups",
+    "titles",
+    "itemTable",
+    "weapons",
+    "attacks",
+    "liquids",
+    "integrity",
+    "denyList",
   ],
 };

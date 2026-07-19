@@ -176,12 +176,42 @@ button:disabled {
   gap: 6px;
 }
 
+.nav-section-label {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 10px 12px;
+  color: #d8e4db;
+  font-weight: 700;
+}
+
+.nav-section-label.active {
+  color: #132118;
+  background: #d7f26b;
+  border-radius: 8px;
+}
+
 .sub-nav {
   display: grid;
   gap: 5px;
   margin-left: 14px;
   padding-left: 10px;
   border-left: 1px solid rgba(216, 228, 219, 0.24);
+}
+
+.nested-nav-group {
+  display: grid;
+  gap: 5px;
+}
+
+.nested-sub-nav {
+  margin-left: 18px;
+}
+
+.nested-sub-nav-button {
+  min-height: 32px;
+  color: #bfd0c4;
+  font-size: 13px;
 }
 
 .nav-button,

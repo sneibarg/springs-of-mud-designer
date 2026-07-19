@@ -721,6 +721,84 @@ export function TopLevelResourceDesigner({
   );
 }
 
+export function GameDataDesigner({
+                                   documents,
+                                   message,
+                                   onLoadDocuments,
+                                   onSelectDocument,
+                                   resource,
+                                   selectedDocument,
+                                   selectedDocumentId,
+                                   status,
+                                 }: {
+  documents: EditableResourceDocument[];
+  message: string;
+  onLoadDocuments: () => void;
+  onSelectDocument: (documentId: string) => void;
+  resource: ApiResource;
+  selectedDocument: EditableResourceDocument | undefined;
+  selectedDocumentId: string;
+  status: "idle" | "loading";
+}) {
+  const fieldNames = selectedDocument ? editableResourceFieldNames(resource.kind, documents, selectedDocument) : [];
+  const ResourceIcon = resource.icon;
+  const isLoading = status === "loading";
+
+  return (
+      <div className="area-designer">
+        <div className="area-toolbar">
+          <div className="resource-summary">
+            <ResourceIcon size={22}/>
+            <p>{resource.summary}</p>
+          </div>
+          <div className="area-toolbar-actions">
+            <button className="secondary-button" type="button" onClick={onLoadDocuments} disabled={isLoading}>
+              <RotateCw size={18}/>
+              {isLoading ? "Loading" : "Reload"}
+            </button>
+          </div>
+        </div>
+
+        <div className="area-workspace">
+          <aside className="area-list" aria-label="Game data">
+            <div className="area-list-heading">
+              <strong>Rulesets</strong>
+              <span>{documents.length}</span>
+            </div>
+            {documents.map((document) => (
+                <button
+                    className={selectedDocumentId === document.id ? "area-list-item active" : "area-list-item"}
+                    key={document.id ?? String(document.kind ?? documentDisplayName(document, resource.kind))}
+                    type="button"
+                    onClick={() => onSelectDocument(document.id ?? "new")}
+                >
+                  <strong>{documentDisplayName(document, resource.kind)}</strong>
+                  <span>{documentSecondaryLabel(document, resource.kind)}</span>
+                </button>
+            ))}
+          </aside>
+
+          {selectedDocument ? (
+              <MobileForm
+                  fieldNames={fieldNames}
+                  isReadOnly
+                  mobileDraft={selectedDocument}
+                  onUpdateMobileDraft={() => undefined}
+              />
+          ) : (
+              <div className="empty-editor-state">
+                <ResourceIcon size={28}/>
+                <strong>Select a ruleset to inspect.</strong>
+                <span>Game data is read-only in this editor because the Java API exposes GET endpoints only.</span>
+              </div>
+          )}
+        </div>
+
+        {message ? <span className="area-message">{message}</span> : null}
+      </div>
+  );
+}
+
 export function EditableResourceCreateModal({
                                        documentDraft,
                                        fieldNames,
@@ -949,10 +1027,12 @@ export function MobileCreateModal({
 
 export function MobileForm({
                       fieldNames,
+                      isReadOnly = false,
                       mobileDraft,
                       onUpdateMobileDraft,
                     }: {
   fieldNames: string[];
+  isReadOnly?: boolean;
   mobileDraft: MobileView;
   onUpdateMobileDraft: (key: string, value: EditableValue | undefined) => void;
 }) {
@@ -961,6 +1041,7 @@ export function MobileForm({
         {fieldNames.map((fieldName) => (
             <MobileField
                 fieldName={fieldName}
+                isReadOnly={isReadOnly}
                 key={fieldName}
                 onUpdateMobileDraft={onUpdateMobileDraft}
                 value={mobileDraft[fieldName]}
@@ -972,10 +1053,12 @@ export function MobileForm({
 
 export function MobileField({
                        fieldName,
+                       isReadOnly = false,
                        onUpdateMobileDraft,
                        value,
                      }: {
   fieldName: string;
+  isReadOnly?: boolean;
   onUpdateMobileDraft: (key: string, value: EditableValue | undefined) => void;
   value: EditableValue | undefined;
 }) {
@@ -987,7 +1070,7 @@ export function MobileField({
         <label className="proxy-toggle mobile-boolean-field">
           <input
               checked={value}
-              disabled={isIdField}
+              disabled={isIdField || isReadOnly}
               type="checkbox"
               onChange={(event) => onUpdateMobileDraft(fieldName, event.target.checked)}
           />
@@ -1002,6 +1085,7 @@ export function MobileField({
           {startCase(fieldName)}
           <input
               disabled={isIdField}
+              readOnly={isReadOnly}
               type="number"
               value={value}
               onChange={(event) => onUpdateMobileDraft(fieldName, Number(event.target.value))}
@@ -1015,6 +1099,7 @@ export function MobileField({
         <ArrayMobileField
             className="wide-field"
             fieldName={fieldName}
+            isReadOnly={isReadOnly}
             onUpdateMobileDraft={onUpdateMobileDraft}
             value={value}
         />
@@ -1026,6 +1111,7 @@ export function MobileField({
         <RecordMobileField
             className={isWide ? "wide-field" : undefined}
             fieldName={fieldName}
+            isReadOnly={isReadOnly}
             onUpdateMobileDraft={onUpdateMobileDraft}
             value={value}
         />
@@ -1037,6 +1123,7 @@ export function MobileField({
         {startCase(fieldName)}
         <input
             disabled={isIdField}
+            readOnly={isReadOnly}
             value={value == null ? "" : String(value)}
             onChange={(event) => onUpdateMobileDraft(fieldName, event.target.value)}
         />
@@ -1047,11 +1134,13 @@ export function MobileField({
 function ArrayMobileField({
                             className,
                             fieldName,
+                            isReadOnly = false,
                             onUpdateMobileDraft,
                             value,
                           }: {
   className?: string;
   fieldName: string;
+  isReadOnly?: boolean;
   onUpdateMobileDraft: (key: string, value: EditableValue | undefined) => void;
   value: EditableValue[];
 }) {
@@ -1098,10 +1187,12 @@ function ArrayMobileField({
         <div className={`structured-field ${className ?? ""}`}>
           <div className="structured-field-heading">
             <strong>{startCase(fieldName)}</strong>
-            <button className="secondary-button" type="button" onClick={addObjectRow}>
-              <Plus size={16}/>
-              Add {itemLabel}
-            </button>
+            {!isReadOnly ? (
+                <button className="secondary-button" type="button" onClick={addObjectRow}>
+                  <Plus size={16}/>
+                  Add {itemLabel}
+                </button>
+            ) : null}
           </div>
           {objectRows.length > 0 ? (
               <div className="structured-list">
@@ -1109,7 +1200,7 @@ function ArrayMobileField({
                     canReorderRows ? (
                         <section
                             className="guard-card"
-                            draggable
+                            draggable={!isReadOnly}
                             key={`${fieldName}-${rowIndex}`}
                             onDragEnd={() => setDraggedObjectRowIndex(null)}
                             onDragOver={(event) => event.preventDefault()}
@@ -1133,20 +1224,23 @@ function ArrayMobileField({
                               <strong>Predicate {rowIndex + 1}</strong>
                               <span>Drag this predicate to change execution order</span>
                             </div>
-                            <button
-                                className="icon-button structured-remove"
-                                type="button"
-                                onClick={() => removeObjectRow(rowIndex)}
-                                aria-label={`Remove ${itemLabel}`}
-                            >
-                              <X size={16}/>
-                            </button>
+                            {!isReadOnly ? (
+                                <button
+                                    className="icon-button structured-remove"
+                                    type="button"
+                                    onClick={() => removeObjectRow(rowIndex)}
+                                    aria-label={`Remove ${itemLabel}`}
+                                >
+                                  <X size={16}/>
+                                </button>
+                            ) : null}
                           </div>
                           <div className="guard-card-fields">
                             {fieldNames.map((key) => (
                                 <label key={key}>
                                   {startCase(key)}
                                   <input
+                                      readOnly={isReadOnly}
                                       value={formatEditableValue(row[key])}
                                       onChange={(event) => updateObjectField(rowIndex, key, event.target.value)}
                                   />
@@ -1160,19 +1254,22 @@ function ArrayMobileField({
                               <label key={key}>
                                 {startCase(key)}
                                 <input
+                                    readOnly={isReadOnly}
                                     value={formatEditableValue(row[key])}
                                     onChange={(event) => updateObjectField(rowIndex, key, event.target.value)}
                                 />
                               </label>
                           ))}
-                          <button
-                              className="icon-button structured-remove"
-                              type="button"
-                              onClick={() => removeObjectRow(rowIndex)}
-                              aria-label={`Remove ${itemLabel}`}
-                          >
-                            <X size={16}/>
-                          </button>
+                          {!isReadOnly ? (
+                              <button
+                                  className="icon-button structured-remove"
+                                  type="button"
+                                  onClick={() => removeObjectRow(rowIndex)}
+                                  aria-label={`Remove ${itemLabel}`}
+                              >
+                                <X size={16}/>
+                              </button>
+                          ) : null}
                         </div>
                     ),
                 )}
@@ -1218,10 +1315,12 @@ function ArrayMobileField({
       <div className={`structured-field ${className ?? ""}`}>
         <div className="structured-field-heading">
           <strong>{startCase(fieldName)}</strong>
-          <button className="secondary-button" type="button" onClick={addScalarRow}>
-            <Plus size={16}/>
-            Add {itemLabel}
-          </button>
+          {!isReadOnly ? (
+              <button className="secondary-button" type="button" onClick={addScalarRow}>
+                <Plus size={16}/>
+                Add {itemLabel}
+              </button>
+          ) : null}
         </div>
         {value.length > 0 ? (
             <div className="structured-list scalar-list">
@@ -1229,7 +1328,7 @@ function ArrayMobileField({
                   canReorderScalarRows ? (
                       <section
                           className="guard-card"
-                          draggable
+                          draggable={!isReadOnly}
                           key={`${fieldName}-${index}`}
                           onDragEnd={() => setDraggedScalarRowIndex(null)}
                           onDragOver={(event) => event.preventDefault()}
@@ -1253,19 +1352,22 @@ function ArrayMobileField({
                             <strong>Lambda {index + 1}</strong>
                             <span>Drag this lambda to change execution order</span>
                           </div>
-                          <button
-                              className="icon-button structured-remove"
-                              type="button"
-                              onClick={() => removeScalarRow(index)}
-                              aria-label={`Remove ${itemLabel}`}
-                          >
-                            <X size={16}/>
-                          </button>
+                          {!isReadOnly ? (
+                              <button
+                                  className="icon-button structured-remove"
+                                  type="button"
+                                  onClick={() => removeScalarRow(index)}
+                                  aria-label={`Remove ${itemLabel}`}
+                              >
+                                <X size={16}/>
+                              </button>
+                          ) : null}
                         </div>
                         <div className="guard-card-fields single-field">
                           <label>
                             Lambda
                             <input
+                                readOnly={isReadOnly}
                                 type="text"
                                 value={formatEditableValue(item)}
                                 onChange={(event) => updateScalarRow(index, event.target.value)}
@@ -1278,19 +1380,22 @@ function ArrayMobileField({
                         <label>
                           {itemLabel} {index + 1}
                           <input
+                              readOnly={isReadOnly}
                               type={isNumberArray ? "number" : "text"}
                               value={formatEditableValue(item)}
                               onChange={(event) => updateScalarRow(index, event.target.value)}
                           />
                         </label>
-                        <button
-                            className="icon-button structured-remove"
-                            type="button"
-                            onClick={() => removeScalarRow(index)}
-                            aria-label={`Remove ${itemLabel}`}
-                        >
-                          <X size={16}/>
-                        </button>
+                        {!isReadOnly ? (
+                            <button
+                                className="icon-button structured-remove"
+                                type="button"
+                                onClick={() => removeScalarRow(index)}
+                                aria-label={`Remove ${itemLabel}`}
+                            >
+                              <X size={16}/>
+                            </button>
+                        ) : null}
                       </div>
                   ),
               )}
@@ -1305,11 +1410,13 @@ function ArrayMobileField({
 function RecordMobileField({
                              className,
                              fieldName,
+                             isReadOnly = false,
                              onUpdateMobileDraft,
                              value,
                            }: {
   className?: string;
   fieldName: string;
+  isReadOnly?: boolean;
   onUpdateMobileDraft: (key: string, value: EditableValue | undefined) => void;
   value: { [key: string]: EditableValue };
 }) {
@@ -1319,6 +1426,7 @@ function RecordMobileField({
     return (
         <PayloadRecordField
             className={className}
+            isReadOnly={isReadOnly}
             onUpdateMobileDraft={onUpdateMobileDraft}
             value={value}
         />
@@ -1361,10 +1469,12 @@ function RecordMobileField({
       <div className={`structured-field ${className ?? ""}`}>
         <div className="structured-field-heading">
           <strong>{startCase(fieldName)}</strong>
-          <button className="secondary-button" type="button" onClick={addRecordEntry}>
-            <Plus size={16}/>
-            Add Entry
-          </button>
+          {!isReadOnly ? (
+              <button className="secondary-button" type="button" onClick={addRecordEntry}>
+                <Plus size={16}/>
+                Add Entry
+              </button>
+          ) : null}
         </div>
         {entries.length > 0 ? (
             <div className="structured-list">
@@ -1372,6 +1482,7 @@ function RecordMobileField({
                   <RecordEntryRow
                       entryKey={entryKey}
                       entryValue={entryValue}
+                      isReadOnly={isReadOnly}
                       key={entryKey}
                       onRemove={removeRecordEntry}
                       onUpdateKey={updateRecordKey}
@@ -1388,10 +1499,12 @@ function RecordMobileField({
 
 function PayloadRecordField({
                               className,
+                              isReadOnly = false,
                               onUpdateMobileDraft,
                               value,
                             }: {
   className?: string;
+  isReadOnly?: boolean;
   onUpdateMobileDraft: (key: string, value: EditableValue | undefined) => void;
   value: { [key: string]: EditableValue };
 }) {
@@ -1446,10 +1559,12 @@ function PayloadRecordField({
       <div className={`structured-field ${className ?? ""}`}>
         <div className="structured-field-heading">
           <strong>Payload</strong>
-          <button className="secondary-button" type="button" onClick={addPayloadEntry}>
-            <Plus size={16}/>
-            Add Entry
-          </button>
+          {!isReadOnly ? (
+              <button className="secondary-button" type="button" onClick={addPayloadEntry}>
+                <Plus size={16}/>
+                Add Entry
+              </button>
+          ) : null}
         </div>
         {keys.length > 0 && selectedKey ? (
             <>
@@ -1466,6 +1581,7 @@ function PayloadRecordField({
               <RecordEntryRow
                   entryKey={selectedKey}
                   entryValue={value[selectedKey] ?? {}}
+                  isReadOnly={isReadOnly}
                   key={selectedKey}
                   onRemove={removePayloadEntry}
                   onUpdateKey={updatePayloadKey}
@@ -1482,12 +1598,14 @@ function PayloadRecordField({
 function RecordEntryRow({
                           entryKey,
                           entryValue,
+                          isReadOnly = false,
                           onRemove,
                           onUpdateKey,
                           onUpdateValue,
                         }: {
   entryKey: string;
   entryValue: EditableValue;
+  isReadOnly?: boolean;
   onRemove: (entryKey: string) => void;
   onUpdateKey: (previousKey: string, nextKey: string) => void;
   onUpdateValue: (entryKey: string, nextValue: string) => void;
@@ -1509,19 +1627,22 @@ function RecordEntryRow({
             <label>
               Key
               <input
+                  readOnly={isReadOnly}
                   value={keyInputValue}
                   onBlur={commitKeyInput}
                   onChange={(event) => setKeyInputValue(event.target.value)}
               />
             </label>
-            <button
-                className="icon-button structured-remove"
-                type="button"
-                onClick={() => onRemove(entryKey)}
-                aria-label="Remove entry"
-            >
-              <X size={16}/>
-            </button>
+            {!isReadOnly ? (
+                <button
+                    className="icon-button structured-remove"
+                    type="button"
+                    onClick={() => onRemove(entryKey)}
+                    aria-label="Remove entry"
+                >
+                  <X size={16}/>
+                </button>
+            ) : null}
           </div>
           <div className="structured-nested-list">
             {Object.entries(entryValue).map(([nestedKey, nestedValue]) => (
@@ -1533,6 +1654,7 @@ function RecordEntryRow({
                   <label>
                     Value
                     <input
+                        readOnly={isReadOnly}
                         value={formatEditableValue(nestedValue)}
                         onChange={(event) =>
                             onUpdateValue(
@@ -1554,6 +1676,7 @@ function RecordEntryRow({
         <label>
           Key
           <input
+              readOnly={isReadOnly}
               value={keyInputValue}
               onBlur={commitKeyInput}
               onChange={(event) => setKeyInputValue(event.target.value)}
@@ -1562,18 +1685,21 @@ function RecordEntryRow({
         <label>
           Value
           <input
+              readOnly={isReadOnly}
               value={formatEditableValue(entryValue)}
               onChange={(event) => onUpdateValue(entryKey, event.target.value)}
           />
         </label>
-        <button
-            className="icon-button structured-remove"
-            type="button"
-            onClick={() => onRemove(entryKey)}
-            aria-label="Remove entry"
-        >
-          <X size={16}/>
-        </button>
+        {!isReadOnly ? (
+            <button
+                className="icon-button structured-remove"
+                type="button"
+                onClick={() => onRemove(entryKey)}
+                aria-label="Remove entry"
+            >
+              <X size={16}/>
+            </button>
+        ) : null}
       </div>
   );
 }
