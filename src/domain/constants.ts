@@ -1,13 +1,6 @@
 import type { AreaView, EditableResourceDocument, FeatureKind, MobileView, RoomView } from "./types";
 
 export const navItems = [
-  { id: "areas" as FeatureKind, label: "Areas" },
-  { id: "rooms" as FeatureKind, label: "Rooms" },
-  { id: "mobiles" as FeatureKind, label: "Mobiles" },
-  { id: "items" as FeatureKind, label: "Items" },
-  { id: "shops" as FeatureKind, label: "Shops" },
-  { id: "resets" as FeatureKind, label: "Resets" },
-  { id: "specials" as FeatureKind, label: "Specials" },
   { id: "classes" as FeatureKind, label: "Classes" },
   { id: "races" as FeatureKind, label: "Races" },
   { id: "skills" as FeatureKind, label: "Skills" },
@@ -17,6 +10,17 @@ export const navItems = [
   { id: "socials" as FeatureKind, label: "Socials" },
   { id: "notes" as FeatureKind, label: "Notes" },
   { id: "game" as FeatureKind, label: "Game" },
+];
+
+export const areaNavItem = { id: "areas" as FeatureKind, label: "Areas" };
+
+export const areaChildNavItems = [
+  { id: "rooms" as FeatureKind, label: "Rooms" },
+  { id: "mobiles" as FeatureKind, label: "Mobiles" },
+  { id: "items" as FeatureKind, label: "Items" },
+  { id: "shops" as FeatureKind, label: "Shops" },
+  { id: "resets" as FeatureKind, label: "Resets" },
+  { id: "specials" as FeatureKind, label: "Specials" },
 ];
 
 export const emptyAreaDraft: AreaView = {
@@ -55,7 +59,7 @@ export const roomNumberFields = ["spawnTimer", "spawnTime", "teleDelay", "roomFl
 
 export const directionNames = ["north", "east", "south", "west", "up", "down"];
 export const editableResourceKinds: FeatureKind[] = ["items", "shops", "resets"];
-export const topLevelEditableResourceKinds: FeatureKind[] = ["classes", "races"];
+export const topLevelEditableResourceKinds: FeatureKind[] = ["classes", "races", "skills", "spells", "commands"];
 export const areaScopedDraftKinds: FeatureKind[] = ["areas", "rooms", "mobiles", ...editableResourceKinds];
 
 export const emptyMobileDraft: MobileView = {
@@ -166,6 +170,59 @@ export const emptyEditableResourceDrafts: Record<string, EditableResourceDocumen
     dex: 0,
     maxDex: 0,
   },
+  skills: {
+    name: "",
+    kind: "skill",
+    handlerId: "",
+    target: "",
+    minPosition: "",
+    nounDamage: "",
+    fightExecutor: "",
+    guards: [],
+    payload: {},
+    fightPlan: {},
+    levelByClass: {},
+    ratingByClass: {},
+    slot: 0,
+    minMana: 0,
+    beats: 0,
+  },
+  spells: {
+    name: "",
+    kind: "spell",
+    handlerId: "",
+    target: "",
+    minPosition: "",
+    nounDamage: "",
+    functionName: "",
+    guards: [],
+    payload: {},
+    levelByClass: {},
+    ratingByClass: {},
+    slot: 0,
+    minMana: 0,
+    beats: 0,
+    affectData: [],
+    lambdas: [],
+  },
+  commands: {
+    name: "",
+    message: "",
+    role: "",
+    usage: "",
+    skillId: "",
+    shortcuts: "",
+    position: "",
+    log: "",
+    help: "",
+    level: "",
+    payload: {},
+    guards: [],
+    lambdas: [],
+    enabled: true,
+    pipeline: false,
+    maxArguments: 0,
+  },
 };
 
 export const preferredEditableResourceFields: Record<string, string[]> = {
@@ -240,5 +297,61 @@ export const preferredEditableResourceFields: Record<string, string[]> = {
     "maxWis",
     "dex",
     "maxDex",
+  ],
+  skills: [
+    "id",
+    "name",
+    "kind",
+    "handlerId",
+    "target",
+    "minPosition",
+    "nounDamage",
+    "fightExecutor",
+    "guards",
+    "payload",
+    "fightPlan",
+    "levelByClass",
+    "ratingByClass",
+    "slot",
+    "minMana",
+    "beats",
+  ],
+  spells: [
+    "id",
+    "name",
+    "kind",
+    "handlerId",
+    "target",
+    "minPosition",
+    "nounDamage",
+    "functionName",
+    "guards",
+    "payload",
+    "levelByClass",
+    "ratingByClass",
+    "slot",
+    "minMana",
+    "beats",
+    "affectData",
+    "lambdas",
+  ],
+  commands: [
+    "id",
+    "name",
+    "message",
+    "role",
+    "usage",
+    "skillId",
+    "shortcuts",
+    "position",
+    "log",
+    "help",
+    "level",
+    "payload",
+    "guards",
+    "lambdas",
+    "enabled",
+    "pipeline",
+    "maxArguments",
   ],
 };

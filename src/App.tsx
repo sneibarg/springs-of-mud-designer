@@ -25,6 +25,8 @@ import {
   RoomCreateModal,
   RoomDesigner,
   TopLevelResourceDesigner,
+  areaChildNavItems,
+  areaNavItem,
   areaScopedDraftKinds,
   compareAreas,
   compareEditableResourceDocuments,
@@ -1241,6 +1243,51 @@ export function App() {
           </div>
 
           <nav className="main-nav" aria-label="Feature sections">
+            <div className="nav-group">
+              {(() => {
+                const resource = apiResources.find((entry) => entry.kind === areaNavItem.id);
+                const Icon = resource?.icon ?? CircleDashed;
+                const selected = areaNavItem.id === activeKind;
+                const childSelected = areaChildNavItems.some((item) => item.id === activeKind);
+
+                return (
+                    <button
+                        className={selected || childSelected ? "nav-button active" : "nav-button"}
+                        onClick={() => {
+                          setActiveKind(areaNavItem.id);
+                          updateDraft("kind", areaNavItem.id);
+                        }}
+                        type="button"
+                    >
+                      <Icon size={18}/>
+                      <span>{areaNavItem.label}</span>
+                    </button>
+                );
+              })()}
+              <div className="sub-nav" aria-label="Area resources">
+                {areaChildNavItems.map((item) => {
+                  const resource = apiResources.find((entry) => entry.kind === item.id);
+                  const Icon = resource?.icon ?? CircleDashed;
+                  const selected = item.id === activeKind;
+
+                  return (
+                      <button
+                          className={selected ? "nav-button sub-nav-button active" : "nav-button sub-nav-button"}
+                          key={item.id}
+                          onClick={() => {
+                            setActiveKind(item.id);
+                            updateDraft("kind", item.id);
+                          }}
+                          type="button"
+                      >
+                        <Icon size={16}/>
+                        <span>{item.label}</span>
+                      </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {navItems.map((item) => {
               const resource = apiResources.find((entry) => entry.kind === item.id);
               const Icon = resource?.icon ?? CircleDashed;

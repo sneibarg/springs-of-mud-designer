@@ -1010,9 +1010,20 @@ export function MobileField({
     );
   }
 
+  if (Array.isArray(value)) {
+    return (
+        <ArrayMobileField
+            className="wide-field"
+            fieldName={fieldName}
+            onUpdateMobileDraft={onUpdateMobileDraft}
+            value={value}
+        />
+    );
+  }
+
   if (isComplexValue(value)) {
     return (
-        <JsonMobileField
+        <RecordMobileField
             className={isWide ? "wide-field" : undefined}
             fieldName={fieldName}
             onUpdateMobileDraft={onUpdateMobileDraft}
@@ -1030,6 +1041,540 @@ export function MobileField({
             onChange={(event) => onUpdateMobileDraft(fieldName, event.target.value)}
         />
       </label>
+  );
+}
+
+function ArrayMobileField({
+                            className,
+                            fieldName,
+                            onUpdateMobileDraft,
+                            value,
+                          }: {
+  className?: string;
+  fieldName: string;
+  onUpdateMobileDraft: (key: string, value: EditableValue | undefined) => void;
+  value: EditableValue[];
+}) {
+  const objectRows = value.filter(isPlainEditableObject);
+  const isObjectArray = value.length === 0 ? isObjectArrayField(fieldName) : objectRows.length === value.length;
+  const itemLabel = singularResourceLabel(startCase(fieldName));
+  const [draggedObjectRowIndex, setDraggedObjectRowIndex] = useState<number | null>(null);
+  const [draggedScalarRowIndex, setDraggedScalarRowIndex] = useState<number | null>(null);
+
+  if (isObjectArray) {
+    const displayedRows = fieldName === "guards" ? objectRows.map(toDisplayedGuardRow) : objectRows;
+    const fieldNames = objectArrayFieldNames(fieldName, displayedRows);
+    const canReorderRows = fieldName === "guards";
+
+    const updateObjectField = (rowIndex: number, key: string, nextValue: string) => {
+      const persistedKey = fieldName === "guards" && key === "predicate" ? "lambda" : key;
+      onUpdateMobileDraft(
+          fieldName,
+          objectRows.map((row, index) =>
+              index === rowIndex ? { ...row, [persistedKey]: parseEditableScalar(nextValue) } : row,
+          ),
+      );
+    };
+
+    const removeObjectRow = (rowIndex: number) => {
+      onUpdateMobileDraft(fieldName, objectRows.filter((_row, index) => index !== rowIndex));
+    };
+
+    const addObjectRow = () => {
+      onUpdateMobileDraft(fieldName, [...objectRows, emptyObjectArrayRow(fieldName, fieldNames)]);
+    };
+
+    const reorderObjectRow = (toIndex: number) => {
+      if (draggedObjectRowIndex == null || draggedObjectRowIndex === toIndex) {
+        setDraggedObjectRowIndex(null);
+        return;
+      }
+
+      onUpdateMobileDraft(fieldName, reorderEditableRows(objectRows, draggedObjectRowIndex, toIndex));
+      setDraggedObjectRowIndex(null);
+    };
+
+    return (
+        <div className={`structured-field ${className ?? ""}`}>
+          <div className="structured-field-heading">
+            <strong>{startCase(fieldName)}</strong>
+            <button className="secondary-button" type="button" onClick={addObjectRow}>
+              <Plus size={16}/>
+              Add {itemLabel}
+            </button>
+          </div>
+          {objectRows.length > 0 ? (
+              <div className="structured-list">
+                {displayedRows.map((row, rowIndex) =>
+                    canReorderRows ? (
+                        <section
+                            className="guard-card"
+                            draggable
+                            key={`${fieldName}-${rowIndex}`}
+                            onDragEnd={() => setDraggedObjectRowIndex(null)}
+                            onDragOver={(event) => event.preventDefault()}
+                            onDragStart={(event) => {
+                              const target = event.target as HTMLElement;
+                              if (target.closest("input, textarea, select, button")) {
+                                event.preventDefault();
+                                return;
+                              }
+
+                              setDraggedObjectRowIndex(rowIndex);
+                              event.dataTransfer.effectAllowed = "move";
+                            }}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              reorderObjectRow(rowIndex);
+                            }}
+                        >
+                          <div className="guard-card-heading">
+                            <div>
+                              <strong>Predicate {rowIndex + 1}</strong>
+                              <span>Drag this predicate to change execution order</span>
+                            </div>
+                            <button
+                                className="icon-button structured-remove"
+                                type="button"
+                                onClick={() => removeObjectRow(rowIndex)}
+                                aria-label={`Remove ${itemLabel}`}
+                            >
+                              <X size={16}/>
+                            </button>
+                          </div>
+                          <div className="guard-card-fields">
+                            {fieldNames.map((key) => (
+                                <label key={key}>
+                                  {startCase(key)}
+                                  <input
+                                      value={formatEditableValue(row[key])}
+                                      onChange={(event) => updateObjectField(rowIndex, key, event.target.value)}
+                                  />
+                                </label>
+                            ))}
+                          </div>
+                        </section>
+                    ) : (
+                        <div className="structured-row" key={`${fieldName}-${rowIndex}`}>
+                          {fieldNames.map((key) => (
+                              <label key={key}>
+                                {startCase(key)}
+                                <input
+                                    value={formatEditableValue(row[key])}
+                                    onChange={(event) => updateObjectField(rowIndex, key, event.target.value)}
+                                />
+                              </label>
+                          ))}
+                          <button
+                              className="icon-button structured-remove"
+                              type="button"
+                              onClick={() => removeObjectRow(rowIndex)}
+                              aria-label={`Remove ${itemLabel}`}
+                          >
+                            <X size={16}/>
+                          </button>
+                        </div>
+                    ),
+                )}
+              </div>
+          ) : (
+              <p className="structured-empty">No {fieldName} entries.</p>
+          )}
+        </div>
+    );
+  }
+
+  const isNumberArray = value.every((item) => typeof item === "number") || fieldName === "classMultiplier";
+  const canReorderScalarRows = fieldName === "lambdas";
+
+  function updateScalarRow(index: number, nextValue: string) {
+    onUpdateMobileDraft(
+        fieldName,
+        value.map((item, rowIndex) =>
+            rowIndex === index ? (isNumberArray ? Number(nextValue) : nextValue) : item,
+        ),
+    );
+  }
+
+  function removeScalarRow(index: number) {
+    onUpdateMobileDraft(fieldName, value.filter((_item, rowIndex) => rowIndex !== index));
+  }
+
+  function addScalarRow() {
+    onUpdateMobileDraft(fieldName, [...value, isNumberArray ? 0 : ""]);
+  }
+
+  function reorderScalarRow(toIndex: number) {
+    if (draggedScalarRowIndex == null || draggedScalarRowIndex === toIndex) {
+      setDraggedScalarRowIndex(null);
+      return;
+    }
+
+    onUpdateMobileDraft(fieldName, reorderEditableValues(value, draggedScalarRowIndex, toIndex));
+    setDraggedScalarRowIndex(null);
+  }
+
+  return (
+      <div className={`structured-field ${className ?? ""}`}>
+        <div className="structured-field-heading">
+          <strong>{startCase(fieldName)}</strong>
+          <button className="secondary-button" type="button" onClick={addScalarRow}>
+            <Plus size={16}/>
+            Add {itemLabel}
+          </button>
+        </div>
+        {value.length > 0 ? (
+            <div className="structured-list scalar-list">
+              {value.map((item, index) =>
+                  canReorderScalarRows ? (
+                      <section
+                          className="guard-card"
+                          draggable
+                          key={`${fieldName}-${index}`}
+                          onDragEnd={() => setDraggedScalarRowIndex(null)}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDragStart={(event) => {
+                            const target = event.target as HTMLElement;
+                            if (target.closest("input, textarea, select, button")) {
+                              event.preventDefault();
+                              return;
+                            }
+
+                            setDraggedScalarRowIndex(index);
+                            event.dataTransfer.effectAllowed = "move";
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            reorderScalarRow(index);
+                          }}
+                      >
+                        <div className="guard-card-heading">
+                          <div>
+                            <strong>Lambda {index + 1}</strong>
+                            <span>Drag this lambda to change execution order</span>
+                          </div>
+                          <button
+                              className="icon-button structured-remove"
+                              type="button"
+                              onClick={() => removeScalarRow(index)}
+                              aria-label={`Remove ${itemLabel}`}
+                          >
+                            <X size={16}/>
+                          </button>
+                        </div>
+                        <div className="guard-card-fields single-field">
+                          <label>
+                            Lambda
+                            <input
+                                type="text"
+                                value={formatEditableValue(item)}
+                                onChange={(event) => updateScalarRow(index, event.target.value)}
+                            />
+                          </label>
+                        </div>
+                      </section>
+                  ) : (
+                      <div className="structured-row scalar-row" key={`${fieldName}-${index}`}>
+                        <label>
+                          {itemLabel} {index + 1}
+                          <input
+                              type={isNumberArray ? "number" : "text"}
+                              value={formatEditableValue(item)}
+                              onChange={(event) => updateScalarRow(index, event.target.value)}
+                          />
+                        </label>
+                        <button
+                            className="icon-button structured-remove"
+                            type="button"
+                            onClick={() => removeScalarRow(index)}
+                            aria-label={`Remove ${itemLabel}`}
+                        >
+                          <X size={16}/>
+                        </button>
+                      </div>
+                  ),
+              )}
+            </div>
+        ) : (
+            <p className="structured-empty">No {fieldName} entries.</p>
+        )}
+      </div>
+  );
+}
+
+function RecordMobileField({
+                             className,
+                             fieldName,
+                             onUpdateMobileDraft,
+                             value,
+                           }: {
+  className?: string;
+  fieldName: string;
+  onUpdateMobileDraft: (key: string, value: EditableValue | undefined) => void;
+  value: { [key: string]: EditableValue };
+}) {
+  const entries = Object.entries(value);
+
+  if (fieldName === "payload") {
+    return (
+        <PayloadRecordField
+            className={className}
+            onUpdateMobileDraft={onUpdateMobileDraft}
+            value={value}
+        />
+    );
+  }
+
+  function updateRecordEntry(entryKey: string, nextValue: string) {
+    onUpdateMobileDraft(fieldName, { ...value, [entryKey]: parseEditableScalar(nextValue) });
+  }
+
+  function updateRecordKey(previousKey: string, nextKey: string) {
+    const trimmedKey = nextKey.trim();
+    if (!trimmedKey || trimmedKey === previousKey) {
+      return;
+    }
+
+    const nextValue = value[previousKey];
+    const remaining = omitEditableKey(value, previousKey);
+    onUpdateMobileDraft(fieldName, { ...remaining, [trimmedKey]: nextValue });
+  }
+
+  function removeRecordEntry(entryKey: string) {
+    onUpdateMobileDraft(fieldName, omitEditableKey(value, entryKey));
+  }
+
+  function addRecordEntry() {
+    const baseKey = "key";
+    let nextKey = baseKey;
+    let index = 1;
+
+    while (Object.prototype.hasOwnProperty.call(value, nextKey)) {
+      index += 1;
+      nextKey = `${baseKey}${index}`;
+    }
+
+    onUpdateMobileDraft(fieldName, { ...value, [nextKey]: "" });
+  }
+
+  return (
+      <div className={`structured-field ${className ?? ""}`}>
+        <div className="structured-field-heading">
+          <strong>{startCase(fieldName)}</strong>
+          <button className="secondary-button" type="button" onClick={addRecordEntry}>
+            <Plus size={16}/>
+            Add Entry
+          </button>
+        </div>
+        {entries.length > 0 ? (
+            <div className="structured-list">
+              {entries.map(([entryKey, entryValue]) => (
+                  <RecordEntryRow
+                      entryKey={entryKey}
+                      entryValue={entryValue}
+                      key={entryKey}
+                      onRemove={removeRecordEntry}
+                      onUpdateKey={updateRecordKey}
+                      onUpdateValue={updateRecordEntry}
+                  />
+              ))}
+            </div>
+        ) : (
+            <p className="structured-empty">No {fieldName} entries.</p>
+        )}
+      </div>
+  );
+}
+
+function PayloadRecordField({
+                              className,
+                              onUpdateMobileDraft,
+                              value,
+                            }: {
+  className?: string;
+  onUpdateMobileDraft: (key: string, value: EditableValue | undefined) => void;
+  value: { [key: string]: EditableValue };
+}) {
+  const keys = Object.keys(value);
+  const [selectedKey, setSelectedKey] = useState(keys[0] ?? "");
+
+  useEffect(() => {
+    if (selectedKey && Object.prototype.hasOwnProperty.call(value, selectedKey)) {
+      return;
+    }
+
+    setSelectedKey(Object.keys(value)[0] ?? "");
+  }, [selectedKey, value]);
+
+  function updatePayloadEntry(entryKey: string, nextValue: string) {
+    onUpdateMobileDraft("payload", { ...value, [entryKey]: parseEditableScalar(nextValue) });
+  }
+
+  function updatePayloadKey(previousKey: string, nextKey: string) {
+    const trimmedKey = nextKey.trim();
+    if (!trimmedKey || trimmedKey === previousKey) {
+      return;
+    }
+
+    const nextValue = value[previousKey];
+    const remaining = omitEditableKey(value, previousKey);
+    onUpdateMobileDraft("payload", { ...remaining, [trimmedKey]: nextValue });
+    setSelectedKey(trimmedKey);
+  }
+
+  function removePayloadEntry(entryKey: string) {
+    const remaining = omitEditableKey(value, entryKey);
+    onUpdateMobileDraft("payload", remaining);
+    setSelectedKey(Object.keys(remaining)[0] ?? "");
+  }
+
+  function addPayloadEntry() {
+    const baseKey = "payloadKey";
+    let nextKey = baseKey;
+    let index = 1;
+
+    while (Object.prototype.hasOwnProperty.call(value, nextKey)) {
+      index += 1;
+      nextKey = `${baseKey}${index}`;
+    }
+
+    onUpdateMobileDraft("payload", { ...value, [nextKey]: {} });
+    setSelectedKey(nextKey);
+  }
+
+  return (
+      <div className={`structured-field ${className ?? ""}`}>
+        <div className="structured-field-heading">
+          <strong>Payload</strong>
+          <button className="secondary-button" type="button" onClick={addPayloadEntry}>
+            <Plus size={16}/>
+            Add Entry
+          </button>
+        </div>
+        {keys.length > 0 && selectedKey ? (
+            <>
+              <label className="payload-key-select">
+                Key
+                <select value={selectedKey} onChange={(event) => setSelectedKey(event.target.value)}>
+                  {keys.map((key) => (
+                      <option key={key} value={key}>
+                        {key}
+                      </option>
+                  ))}
+                </select>
+              </label>
+              <RecordEntryRow
+                  entryKey={selectedKey}
+                  entryValue={value[selectedKey] ?? {}}
+                  key={selectedKey}
+                  onRemove={removePayloadEntry}
+                  onUpdateKey={updatePayloadKey}
+                  onUpdateValue={updatePayloadEntry}
+              />
+            </>
+        ) : (
+            <p className="structured-empty">No payload entries.</p>
+        )}
+      </div>
+  );
+}
+
+function RecordEntryRow({
+                          entryKey,
+                          entryValue,
+                          onRemove,
+                          onUpdateKey,
+                          onUpdateValue,
+                        }: {
+  entryKey: string;
+  entryValue: EditableValue;
+  onRemove: (entryKey: string) => void;
+  onUpdateKey: (previousKey: string, nextKey: string) => void;
+  onUpdateValue: (entryKey: string, nextValue: string) => void;
+}) {
+  const [keyInputValue, setKeyInputValue] = useState(entryKey);
+
+  useEffect(() => {
+    setKeyInputValue(entryKey);
+  }, [entryKey]);
+
+  function commitKeyInput() {
+    onUpdateKey(entryKey, keyInputValue);
+  }
+
+  if (isPlainEditableObject(entryValue)) {
+    return (
+        <div className="structured-record-group">
+          <div className="structured-record-heading">
+            <label>
+              Key
+              <input
+                  value={keyInputValue}
+                  onBlur={commitKeyInput}
+                  onChange={(event) => setKeyInputValue(event.target.value)}
+              />
+            </label>
+            <button
+                className="icon-button structured-remove"
+                type="button"
+                onClick={() => onRemove(entryKey)}
+                aria-label="Remove entry"
+            >
+              <X size={16}/>
+            </button>
+          </div>
+          <div className="structured-nested-list">
+            {Object.entries(entryValue).map(([nestedKey, nestedValue]) => (
+                <div className="structured-row record-row" key={`${entryKey}-${nestedKey}`}>
+                  <label>
+                    Value Key
+                    <input value={startCase(nestedKey)} disabled />
+                  </label>
+                  <label>
+                    Value
+                    <input
+                        value={formatEditableValue(nestedValue)}
+                        onChange={(event) =>
+                            onUpdateValue(
+                                entryKey,
+                                JSON.stringify({ ...entryValue, [nestedKey]: parseEditableScalar(event.target.value) }),
+                            )
+                        }
+                    />
+                  </label>
+                </div>
+            ))}
+          </div>
+        </div>
+    );
+  }
+
+  return (
+      <div className="structured-row record-row">
+        <label>
+          Key
+          <input
+              value={keyInputValue}
+              onBlur={commitKeyInput}
+              onChange={(event) => setKeyInputValue(event.target.value)}
+          />
+        </label>
+        <label>
+          Value
+          <input
+              value={formatEditableValue(entryValue)}
+              onChange={(event) => onUpdateValue(entryKey, event.target.value)}
+          />
+        </label>
+        <button
+            className="icon-button structured-remove"
+            type="button"
+            onClick={() => onRemove(entryKey)}
+            aria-label="Remove entry"
+        >
+          <X size={16}/>
+        </button>
+      </div>
   );
 }
 
@@ -1069,6 +1614,98 @@ export function JsonMobileField({
         />
       </label>
   );
+}
+
+function isPlainEditableObject(value: EditableValue): value is { [key: string]: EditableValue } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isObjectArrayField(fieldName: string) {
+  return /guards|affectData/i.test(fieldName);
+}
+
+function toDisplayedGuardRow(row: { [key: string]: EditableValue }) {
+  if (row.predicate !== undefined || row.lambda === undefined) {
+    return row;
+  }
+
+  const { lambda, ...remaining } = row;
+  return { predicate: lambda, ...remaining };
+}
+
+function objectArrayFieldNames(fieldName: string, rows: Array<{ [key: string]: EditableValue }>) {
+  const preferredFields =
+      fieldName === "guards"
+          ? ["predicate", "messageKey"]
+          : fieldName === "affectData"
+              ? ["where", "type", "level", "duration", "modifier", "location", "bitvector"]
+              : [];
+  const keys = new Set(preferredFields);
+
+  rows.forEach((row) => {
+    Object.keys(row).forEach((key) => keys.add(key));
+  });
+
+  return [...keys];
+}
+
+function emptyObjectArrayRow(fieldName: string, fieldNames: string[]) {
+  const rowFields = fieldNames.length > 0 ? fieldNames : objectArrayFieldNames(fieldName, []);
+
+  return rowFields.reduce<{ [key: string]: EditableValue }>((row, key) => {
+    row[key] = "";
+    return row;
+  }, {});
+}
+
+function omitEditableKey(record: { [key: string]: EditableValue }, keyToRemove: string) {
+  return Object.fromEntries(
+      Object.entries(record).filter(([key]) => key !== keyToRemove),
+  ) as { [key: string]: EditableValue };
+}
+
+function reorderEditableRows(rows: Array<{ [key: string]: EditableValue }>, fromIndex: number, toIndex: number) {
+  const reorderedRows = [...rows];
+  const [movedRow] = reorderedRows.splice(fromIndex, 1);
+  reorderedRows.splice(toIndex, 0, movedRow);
+  return reorderedRows;
+}
+
+function reorderEditableValues(values: EditableValue[], fromIndex: number, toIndex: number) {
+  const reorderedValues = [...values];
+  const [movedValue] = reorderedValues.splice(fromIndex, 1);
+  reorderedValues.splice(toIndex, 0, movedValue);
+  return reorderedValues;
+}
+
+function parseEditableScalar(value: string): EditableValue {
+  const trimmedValue = value.trim();
+
+  if (trimmedValue === "true") {
+    return true;
+  }
+
+  if (trimmedValue === "false") {
+    return false;
+  }
+
+  if (trimmedValue === "null") {
+    return null;
+  }
+
+  if (trimmedValue && !Number.isNaN(Number(trimmedValue)) && /^-?\d+(\.\d+)?$/.test(trimmedValue)) {
+    return Number(trimmedValue);
+  }
+
+  if (/^[{[]/.test(trimmedValue)) {
+    try {
+      return JSON.parse(trimmedValue) as EditableValue;
+    } catch {
+      return value;
+    }
+  }
+
+  return value;
 }
 
 export function RoomCreateModal({

@@ -239,7 +239,15 @@ export function validateEditableResourceDocument(document: EditableResourceDocum
     return "Area id is required.";
   }
 
-  if ((label === "Items" || label === "Classes" || label === "Races") && !String(document.name ?? "").trim()) {
+  if (
+      (label === "Items" ||
+          label === "Classes" ||
+          label === "Races" ||
+          label === "Skills" ||
+          label === "Spells" ||
+          label === "Commands") &&
+      !String(document.name ?? "").trim()
+  ) {
     return `${singularResourceLabel(label)} name is required.`;
   }
 
@@ -384,6 +392,18 @@ export function singularResourceLabel(label: string) {
     return "Reset";
   }
 
+  if (label === "Classes") {
+    return "Class";
+  }
+
+  if (label === "Races") {
+    return "Race";
+  }
+
+  if (label === "Commands") {
+    return "Command";
+  }
+
   return label.endsWith("s") ? label.slice(0, -1) : label;
 }
 
@@ -398,7 +418,7 @@ export function documentDisplayName(document: EditableResourceDocument, kind: Fe
         .join(" ") || "Unnamed reset";
   }
 
-  if (kind === "classes") {
+  if (kind === "classes" || kind === "skills" || kind === "spells" || kind === "commands") {
     return String(document.name ?? document.whoName ?? document.id ?? "Unnamed class");
   }
 
@@ -420,6 +440,18 @@ export function documentSecondaryLabel(document: EditableResourceDocument, kind:
 
   if (kind === "classes") {
     return String(document.whoName ?? document.primaryAttribute ?? document.id ?? "No who name");
+  }
+
+  if (kind === "skills") {
+    return String(document.target ?? document.minPosition ?? document.id ?? "No target");
+  }
+
+  if (kind === "spells") {
+    return String(document.functionName ?? document.target ?? document.id ?? "No function");
+  }
+
+  if (kind === "commands") {
+    return String(document.usage ?? document.role ?? document.id ?? "No usage");
   }
 
   if (kind === "races") {

@@ -171,6 +171,19 @@ button:disabled {
   padding-right: 2px;
 }
 
+.nav-group {
+  display: grid;
+  gap: 6px;
+}
+
+.sub-nav {
+  display: grid;
+  gap: 5px;
+  margin-left: 14px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(216, 228, 219, 0.24);
+}
+
 .nav-button,
 .ghost-button,
 .primary-button,
@@ -194,6 +207,13 @@ button:disabled {
   color: #d8e4db;
   background: transparent;
   padding: 10px 12px;
+}
+
+.sub-nav-button {
+  min-height: 34px;
+  padding: 8px 10px;
+  color: #c8d8cd;
+  font-size: 14px;
 }
 
 .nav-button.active,
@@ -734,6 +754,189 @@ button:disabled {
   min-height: 132px;
 }
 
+.structured-field {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  color: #4d5c52;
+  background: #f8faf7;
+  border: 1px solid #e1e7e1;
+  border-radius: 8px;
+}
+
+.structured-field-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.structured-field-heading strong {
+  color: #314137;
+}
+
+.structured-list {
+  display: grid;
+  gap: 10px;
+}
+
+.structured-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid #dbe2dc;
+  border-radius: 8px;
+}
+
+.guard-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #dbe2dc;
+  border-radius: 8px;
+  cursor: grab;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.guard-card:hover {
+  border-color: #2f6f55;
+  box-shadow: inset 3px 0 0 #2f6f55;
+}
+
+.guard-card:active {
+  cursor: grabbing;
+}
+
+.guard-card-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.guard-card-heading strong,
+.guard-card-heading span {
+  display: block;
+}
+
+.guard-card-heading span {
+  color: #627168;
+  font-size: 13px;
+}
+
+.guard-card-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.guard-card-fields.single-field {
+  grid-template-columns: 1fr;
+}
+
+.guard-card-fields label {
+  display: grid;
+  gap: 7px;
+  color: #4d5c52;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.guard-card-fields input {
+  width: 100%;
+  min-height: 38px;
+  color: #17211b;
+  background: #ffffff;
+  border: 1px solid #cfd8d1;
+  border-radius: 8px;
+  outline: none;
+  padding: 10px 12px;
+}
+
+.guard-card-fields input:focus {
+  border-color: #2f6f55;
+  box-shadow: 0 0 0 3px rgba(47, 111, 85, 0.14);
+}
+
+.structured-record-group {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid #dbe2dc;
+  border-radius: 8px;
+}
+
+.structured-record-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.structured-nested-list {
+  display: grid;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 3px solid #d7f26b;
+}
+
+.structured-row label {
+  min-width: 0;
+}
+
+.structured-row input {
+  min-height: 38px;
+}
+
+.payload-key-select {
+  display: grid;
+  gap: 7px;
+  color: #4d5c52;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.payload-key-select select {
+  width: 100%;
+  min-height: 40px;
+  color: #17211b;
+  background: #ffffff;
+  border: 1px solid #cfd8d1;
+  border-radius: 8px;
+  outline: none;
+  padding: 10px 12px;
+}
+
+.payload-key-select select:focus {
+  border-color: #2f6f55;
+  box-shadow: 0 0 0 3px rgba(47, 111, 85, 0.14);
+}
+
+.scalar-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.structured-remove {
+  width: 38px;
+  min-height: 38px;
+  color: #314137;
+  background: #eef2ee;
+}
+
+.structured-empty {
+  margin: 0;
+  color: #627168;
+  font-size: 14px;
+}
+
 .area-room-panel {
   display: grid;
   gap: 14px;
@@ -1162,6 +1365,17 @@ button:disabled {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .nav-group {
+    grid-column: 1 / -1;
+  }
+
+  .sub-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+  }
+
   .nav-button {
     justify-content: center;
   }
@@ -1188,6 +1402,9 @@ button:disabled {
   .api-settings-form,
   .area-room-grid,
   .exit-grid,
+  .structured-row,
+  .structured-record-heading,
+  .guard-card-fields,
   .overview-metrics {
     grid-template-columns: 1fr;
   }
@@ -1209,6 +1426,10 @@ button:disabled {
   }
 
   .main-nav {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sub-nav {
     grid-template-columns: 1fr 1fr;
   }
 

@@ -172,7 +172,6 @@ export type CommandView = {
   payload: Record<string, EditableValue>;
   guards: Array<Record<string, EditableValue>>;
   lambdas: string[];
-  function: string[];
   enabled: boolean;
   pipeline: boolean;
   maxArguments: number;
