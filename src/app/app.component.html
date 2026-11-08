@@ -2,13 +2,13 @@
   <dialog #unsavedDialog class="unsaved-dialog" aria-labelledby="unsaved-title" aria-describedby="unsaved-description"
     (cancel)="$event.preventDefault(); finishDraftDecision(false)">
     <h2 id="unsaved-title">Unsaved changes</h2>
-    <p id="unsaved-description">Save this document before continuing, discard your edits, or stay to keep editing.</p>
+    <p id="unsaved-description">{{ activeKind === 'game' ? 'These Game Data edits are local. Discard them or stay to keep editing.' : 'Save this document before continuing, discard your edits, or stay to keep editing.' }}</p>
     <p *ngIf="fieldJsonInvalid || rawJsonError" class="field-error">Stay and correct invalid JSON before saving.</p>
     <p role="status" aria-live="polite">{{ resourceMessage }}</p>
     <div class="dialog-actions">
       <button class="secondary-button" type="button" autofocus (click)="finishDraftDecision(false)">Stay</button>
       <button class="secondary-button" type="button" (click)="finishDraftDecision(true)">Discard changes</button>
-      <button class="primary-button" type="button" [disabled]="saveBlocked" (click)="saveAndContinue()">Save and continue</button>
+      <button *ngIf="activeKind !== 'game'" class="primary-button" type="button" [disabled]="saveBlocked" (click)="saveAndContinue()">Save and continue</button>
     </div>
   </dialog>
   <aside class="sidebar">
@@ -33,52 +33,51 @@
       </button>
 
       <div class="nav-group">
-        <button
-          class="nav-section-label"
-          type="button"
-          [class.active]="activeKind === areaNavItem.id"
-          [attr.aria-current]="activeKind === areaNavItem.id ? 'page' : null"
-          (click)="setActiveKind(areaNavItem.id)"
-        >
-          {{ areaNavItem.label }}
-        </button>
-        <div class="sub-nav">
+        <div class="nav-group-heading">
+          <button
+            class="nav-section-label"
+            type="button"
+            [class.active]="activeKind === areaNavItem.id"
+            [attr.aria-current]="activeKind === areaNavItem.id ? 'page' : null"
+            (click)="setActiveKind(areaNavItem.id)"
+          >
+            {{ areaNavItem.label }}
+          </button>
+          <button class="nav-group-toggle" type="button"
+            [attr.aria-label]="areasNavExpanded ? 'Collapse Areas' : 'Expand Areas'"
+            [attr.aria-expanded]="areasNavExpanded" aria-controls="area-resource-nav"
+            (click)="areasNavExpanded = !areasNavExpanded">
+            <span aria-hidden="true">{{ areasNavExpanded ? '▾' : '▸' }}</span>
+          </button>
+        </div>
+        <div id="area-resource-nav" class="sub-nav area-sub-nav" [hidden]="!areasNavExpanded">
           <button
             *ngFor="let item of areaChildNavItems"
             class="nav-button sub-nav-button"
             type="button"
             [class.active]="activeKind === item.id"
-        [attr.aria-current]="activeKind === item.id ? 'page' : null"
+            [attr.aria-current]="activeKind === item.id ? 'page' : null"
             (click)="setActiveKind(item.id)"
           >
             {{ item.label }}
           </button>
-          <div class="nested-nav-group">
-            <div class="nested-sub-nav">
-              <button
-                *ngFor="let item of mobileChildNavItems"
-                class="nav-button nested-sub-nav-button"
-                type="button"
-                [class.active]="activeKind === item.id"
-        [attr.aria-current]="activeKind === item.id ? 'page' : null"
-                (click)="setActiveKind(item.id)"
-              >
-                {{ item.label }}
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
       <div class="nav-group">
-        <span class="nav-section-label">{{ abilitiesNavItem.label }}</span>
-        <div class="sub-nav">
+        <button class="nav-section-label" type="button"
+          [attr.aria-expanded]="abilitiesNavExpanded" aria-controls="ability-resource-nav"
+          (click)="abilitiesNavExpanded = !abilitiesNavExpanded">
+          <span>{{ abilitiesNavItem.label }}</span>
+          <span aria-hidden="true">{{ abilitiesNavExpanded ? '▾' : '▸' }}</span>
+        </button>
+        <div id="ability-resource-nav" class="sub-nav" [hidden]="!abilitiesNavExpanded">
           <button
             *ngFor="let item of abilityChildNavItems"
             class="nav-button sub-nav-button"
             type="button"
             [class.active]="activeKind === item.id"
-        [attr.aria-current]="activeKind === item.id ? 'page' : null"
+            [attr.aria-current]="activeKind === item.id ? 'page' : null"
             (click)="setActiveKind(item.id)"
           >
             {{ item.label }}
@@ -300,7 +299,8 @@
             <span *ngFor="let field of activeResource.fields">{{ field }}</span>
           </div>
 
-          <div class="editor-actions">
+          <div class="editor-actions" [class.game-data-actions]="activeKind === 'game'">
+            <span *ngIf="activeKind === 'game'" class="area-message game-data-note">The Game Data API supports loading only. Edits remain local.</span>
             <span>{{ isDirty ? 'Unsaved changes' : 'No unsaved changes' }}</span>
             <span class="area-message" role="status" aria-live="polite" aria-atomic="true">{{ resourceMessage }}</span>
             <span *ngIf="fieldJsonInvalid" class="field-error" role="alert">Correct editor validation errors before saving.</span>
@@ -310,11 +310,23 @@
               (click)="saveActiveDocument()"
               [disabled]="saveBlocked"
             >
-              {{ resourceStatus === 'saving' ? 'Saving' : 'Save Document' }}
+              {{ activeKind === 'game' ? 'Save unavailable' : resourceStatus === 'saving' ? 'Saving' : 'Save Document' }}
             </button>
           </div>
         </div>
 
+        @if (activeKind === 'game') {
+          <details #gamePreview class="inspector game-data-preview" [open]="gamePreviewExpanded" (toggle)="gamePreviewExpanded = gamePreview.open">
+            <summary>JSON document preview</summary>
+            @if (gamePreviewExpanded) {
+              @if (fieldJsonInvalid || rawJsonError) {
+                <p>Correct editor validation errors to preview the current document.</p>
+              } @else {
+                <pre tabindex="0" aria-label="Game Data JSON document">{{ resourceDraft | json }}</pre>
+              }
+            }
+          </details>
+        } @else {
         <aside class="inspector">
           <div class="section-heading compact">
             <div>
@@ -324,6 +336,7 @@
           </div>
           <pre>{{ createRequest | json }}</pre>
         </aside>
+        }
       </section>
 
       <section class="queue-band">

@@ -1,6 +1,6 @@
 import { jsonPointer, type JsonEditorRules, type JsonFieldRule } from "./json-editor";
 
-// These field types follow the Java RoomView/MobileView persistence contracts.
+// These field types follow the Java area-resource persistence contracts.
 function stringRules(fields: readonly string[]): [string, JsonFieldRule][] {
   return fields.map((field) => [jsonPointer("", field), { type: "string", nullable: field !== "areaId" && field !== "name" }]);
 }
@@ -25,4 +25,13 @@ export const roomEditorRules: JsonEditorRules = Object.fromEntries([
   // Edit exit contents as objects while keeping the List<String> wire format.
   ["/exits", { type: "array", itemType: "string", itemStringFormat: "json-object", nullable: true }],
   ["/mobiles", { type: "object", propertyType: "string", nullable: true }],
+]);
+
+export const specialEditorRules: JsonEditorRules = Object.fromEntries([
+  ...stringRules(["areaId", "mobVnum", "comment"]),
+  ["/name", { type: "string", nullable: true }],
+  ["/specialFunction", {
+    type: "array", itemType: "string", nullable: true,
+    label: "Special Function", itemLabel: "Lambda", itemEditor: "code",
+  }],
 ]);

@@ -34,11 +34,14 @@ export class JsonValueEditorComponent {
   renamingId: number | null = null;
   renameText = "";
   removingId: number | null = null;
+  childrenRendered = false;
 
   constructor(private readonly host: ElementRef<HTMLElement>, private readonly injector: Injector) {}
 
   get isCollection(): boolean { return this.node.type === "array" || this.node.type === "object"; }
+  get renderChildren(): boolean { return this.node.expanded || this.childrenRendered; }
   get embeddedJson(): boolean { return this.node.type === "string" && this.rule?.stringFormat === "json-object"; }
+  get codeEditor(): boolean { return this.node.type === "string" && this.rule?.editor === "code"; }
   get locked(): boolean { return this.readonly || pathIsReadOnly(this.path, this.options.readOnlyPaths); }
   get structureLocked(): boolean {
     return this.locked || pathContainsReadOnly(this.path, this.options.readOnlyPaths) || (this.path === "" && !!this.options.requireObject);
@@ -54,6 +57,12 @@ export class JsonValueEditorComponent {
   get controlId(): string { return `json-value-${this.node.id}`; }
   get errorId(): string { return `json-error-${this.node.id}`; }
   get actionErrorId(): string { return `json-action-error-${this.node.id}`; }
+
+  toggleExpanded(): void {
+    // Render a branch on first use, then retain its controls and invalid buffers.
+    this.childrenRendered = true;
+    this.node.expanded = !this.node.expanded;
+  }
 
   useMultiline(): void {
     this.node.multiline = true;
@@ -73,12 +82,14 @@ export class JsonValueEditorComponent {
     return jsonPointer(this.path, this.node.type === "array" ? index : child.key);
   }
   childLabel(child: JsonEditorNode, index: number): string {
-    return this.node.type === "array" ? `${this.label} item ${index + 1}` : child.key;
+    return this.node.type === "array" ? `${this.rule?.itemLabel ?? `${this.label} item`} ${index + 1}`
+      : this.options.rules?.[this.childPath(child, index)]?.label ?? child.key;
   }
   childRule(child: JsonEditorNode, index: number): JsonFieldRule | undefined {
     return this.options.rules?.[this.childPath(child, index)] ?? (this.entryType ? {
       type: this.entryType,
       ...(this.node.type === "array" && this.rule?.itemStringFormat ? { stringFormat: this.rule.itemStringFormat } : {}),
+      ...(this.node.type === "array" && this.rule?.itemEditor ? { editor: this.rule.itemEditor } : {}),
     } : undefined);
   }
   childLocked(child: JsonEditorNode, index: number): boolean {
@@ -118,6 +129,11 @@ export class JsonValueEditorComponent {
     this.newType = this.entryType ?? "string";
     this.actionError = "";
     this.focus(`[data-add-for="${this.node.id}"]`);
+  }
+  addCodeEntry(): void {
+    if (this.rule?.itemEditor !== "code" || this.node.type !== "array") return;
+    this.newType = "string";
+    this.add();
   }
   add(): void {
     if (this.locked || (this.node.type === "array" && this.orderLocked) || !this.addTypes.includes(this.newType)) return;

@@ -14,6 +14,10 @@ export type JsonFieldRule = {
   integer?: boolean;
   stringFormat?: "json-object";
   itemStringFormat?: "json-object";
+  label?: string;
+  itemLabel?: string;
+  editor?: "code";
+  itemEditor?: "code";
 };
 export type JsonEditorRules = Readonly<Record<string, JsonFieldRule>>;
 export type JsonEditorOptions = { requireObject?: boolean; readOnlyPaths?: readonly string[]; rules?: JsonEditorRules };

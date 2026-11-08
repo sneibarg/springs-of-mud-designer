@@ -42,7 +42,7 @@ focus, and accessibility behavior.
 
 ## JSON payload editor
 
-Items, Mobiles, and Rooms use `JsonPayloadEditorComponent` for their compact Form
+Items, Mobiles, Rooms, Specials, and Game Data use `JsonPayloadEditorComponent` for their compact Form
 and JSON editing modes.
 The standalone component accepts a parsed JSON value (including scalar roots),
 validates incoming data, and edits a private tree without mutating its input.
@@ -70,7 +70,8 @@ for the same dirty document requires an explicit Keep/Replace decision.
 The Form mode supports nested objects, heterogeneous arrays, explicit type
 changes, unique property names, keyboard reordering, and removal confirmation.
 Scalar fields use compact label/value rows and multiple columns when space allows.
-Nested collections start collapsed; expand them to edit their contents. Toggle
+Nested collections start collapsed; their forms render on first expansion and remain
+available afterward to preserve unfinished input when collapsed. Toggle
 Field tools to show types, JSON paths, and add/rename/remove/reorder controls.
 Invalid numeric/JSON text remains available for correction. Form/JSON switching
 is blocked until it is valid. UI identities, expansion state, and input buffers
@@ -94,6 +95,16 @@ as `{}`. Malformed or non-object exit strings retain their original source for
 explicit correction; saving is blocked until the entry is a valid JSON object.
 Unrelated string fields are not interpreted as JSON.
 
+Specials presents `specialFunction` as ordered Python lambda code rows with
+multiline source editing and direct Add lambda, Move up/down, and Remove actions.
+Source text and list order are preserved in the existing string-array payload.
+The designer edits the source; execution belongs to the game runtime.
+
+Game Data rulesets use collapsible sections for version metadata, enums, and tables.
+The complete JSON document preview starts collapsed and scrolls within a bounded panel.
+The current Game Data API supports reads only, so edits remain local and saving is
+unavailable. Leaving a changed ruleset offers Stay or Discard.
+
 `npm run test:editor` also covers JSON type round-trips, invalid buffers,
-read-only paths, stable identities, external updates, and Items/Mobiles/Rooms persistence
+read-only paths, stable identities, external updates, and Items/Mobiles/Rooms/Specials persistence
 integration with mocked transport.

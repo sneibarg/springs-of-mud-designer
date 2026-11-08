@@ -178,13 +178,52 @@ button:disabled {
   gap: 6px;
 }
 
+.nav-group-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 4px;
+  align-items: center;
+}
+
 .nav-section-label {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
   min-height: 40px;
   padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: #d8e4db;
+  font: inherit;
   font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  color: #d8e4db;
+  background: transparent;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.nav-section-label:not(.active):hover, .nav-group-toggle:hover {
+  background: rgba(216, 228, 219, 0.12);
+}
+
+.nav-section-label:focus-visible, .nav-group-toggle:focus-visible {
+  outline: 2px solid #d7f26b;
+  outline-offset: 2px;
 }
 
 .nav-section-label.active {
@@ -201,19 +240,16 @@ button:disabled {
   border-left: 1px solid rgba(216, 228, 219, 0.24);
 }
 
-.nested-nav-group {
-  display: grid;
-  gap: 5px;
+.sub-nav[hidden] {
+  display: none;
 }
 
-.nested-sub-nav {
-  margin-left: 18px;
+.sub-nav.area-sub-nav {
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.nested-sub-nav-button {
-  min-height: 32px;
-  color: #bfd0c4;
-  font-size: 13px;
+.area-sub-nav .nav-button {
+  justify-content: flex-start;
 }
 
 .nav-button,
@@ -1030,6 +1066,31 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .guard-card-heading span {
   color: #627168;
   font-size: 13px;
+}
+
+.game-data-preview summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.game-data-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.game-data-actions .game-data-note {
+  flex-basis: 100%;
+}
+
+.inspector.game-data-preview pre {
+  min-height: 0;
+  max-height: 360px;
+  margin-top: 12px;
+}
+
+.game-data-preview summary:focus-visible {
+  outline: 2px solid #398b68;
+  outline-offset: 3px;
 }
 
 .guard-card-fields {

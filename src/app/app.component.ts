@@ -6,7 +6,8 @@ import { GuardListComponent } from "./guard-list.component";
 import { ResourceFormComponent, type ResourceFormDocument } from "./resource-form.component";
 import { JsonPayloadEditorComponent } from "./json-payload-editor/json-payload-editor.component";
 import { itemEditorRules } from "../domain/item-editor";
-import { mobileEditorRules, roomEditorRules } from "../domain/world-resource-editor";
+import { gameEditorRules } from "../domain/game-editor";
+import { mobileEditorRules, roomEditorRules, specialEditorRules } from "../domain/world-resource-editor";
 import type { JsonEditorRules, JsonEditorState } from "../domain/json-editor";
 import { apiResources, workQueue } from "../data";
 import {
@@ -30,7 +31,6 @@ import {
   emptyMobileDraft,
   emptyRoomDraft,
   topLevelEditableResourceKinds,
-  mobileChildNavItems,
   navItems,
 } from "../domain/constants";
 import type { AreaView, EditableResourceDocument, MobileView, RoomView } from "../domain/types";
@@ -69,24 +69,28 @@ export class AppComponent implements OnInit {
   readonly payloadReadOnlyPaths = ["/id"];
 
   usesJsonPayloadEditor(): boolean {
-    return this.activeKind === "items" || this.activeKind === "mobiles" || this.activeKind === "rooms";
+    return this.activeKind === "items" || this.activeKind === "mobiles" || this.activeKind === "rooms" || this.activeKind === "specials" || this.activeKind === "game";
   }
 
   get payloadEditorRules(): JsonEditorRules {
-    return this.activeKind === "mobiles" ? mobileEditorRules : this.activeKind === "rooms" ? roomEditorRules : itemEditorRules;
+    return this.activeKind === "game" ? gameEditorRules : this.activeKind === "specials" ? specialEditorRules
+      : this.activeKind === "mobiles" ? mobileEditorRules : this.activeKind === "rooms" ? roomEditorRules : itemEditorRules;
   }
 
   get payloadEditorLabel(): string {
-    return this.activeKind === "mobiles" ? "Mobile" : this.activeKind === "rooms" ? "Room" : "Item";
+    return this.activeKind === "game" ? "Game Data" : this.activeKind === "specials" ? "Special"
+      : this.activeKind === "mobiles" ? "Mobile" : this.activeKind === "rooms" ? "Room" : "Item";
   }
   readonly apiResources = apiResources;
   readonly workQueue = workQueue;
   readonly navItems = navItems;
   readonly areaNavItem = areaNavItem;
   readonly areaChildNavItems = areaChildNavItems;
-  readonly mobileChildNavItems = mobileChildNavItems;
   readonly abilitiesNavItem = abilitiesNavItem;
   readonly abilityChildNavItems = abilityChildNavItems;
+  gamePreviewExpanded = false;
+  areasNavExpanded = true;
+  abilitiesNavExpanded = true;
 
   activeKind: FeatureKind = "spells";
   apiBaseUrl = readSavedApiBaseUrl();
@@ -129,7 +133,7 @@ export class AppComponent implements OnInit {
   }
 
   get saveBlocked(): boolean {
-    return this.saving || this.loading || this.fieldJsonInvalid || Boolean(this.rawJsonError);
+    return this.activeKind === "game" || this.saving || this.loading || this.fieldJsonInvalid || Boolean(this.rawJsonError);
   }
 
   get filteredDocuments(): ResourceDocument[] {
@@ -173,6 +177,7 @@ export class AppComponent implements OnInit {
   }
 
   private replaceDraft(document: ResourceDocument, selectedId = "new"): void {
+    this.gamePreviewExpanded = false;
     this.resourceDraft = structuredClone(document);
     this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
     this.baseline = this.resourceDraftText;
@@ -401,6 +406,7 @@ export class AppComponent implements OnInit {
   }
 
   private buildSaveOperation(): { payload: ResourceDocument; endpoint: string; isExistingDocument: boolean } {
+    if (this.activeKind === "game") throw new Error("The Game Data API supports loading only. Edits remain local.");
     if (this.fieldJsonInvalid) throw new Error("Correct invalid field JSON before saving.");
     if (this.rawJsonError) throw new Error(this.rawJsonError);
     const payload = this.normalizeDocument(this.parseDraft(this.resourceDraftText), this.activeKind);

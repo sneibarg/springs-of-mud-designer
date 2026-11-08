@@ -12,6 +12,8 @@
 .scalar-node > .text-button { grid-column: 2; justify-self: start; }
 input:not([type="checkbox"]), textarea, select { box-sizing: border-box; min-width: 0; max-width: 100%; width: 100%; border: 1px solid var(--json-border, #d2ded4); border-radius: 5px; background: var(--json-surface, #fff); color: inherit; padding: 5px 8px; min-height: 32px; font-family: inherit; font-size: 13px; line-height: 1.4; }
 textarea { resize: vertical; min-height: 52px; }
+.code-node .node-heading { margin-bottom: 5px; }
+textarea.code-input { min-height: 88px; background: var(--json-inset, #f5f8f4); font: 13px/1.5 "Cascadia Code", Consolas, monospace; tab-size: 2; }
 input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
 .node-children { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 6px 14px; padding-left: 8px; border-left: 1px solid var(--json-border, #d2ded4); margin-top: 4px; }
 .node-children[hidden] { display: none; }

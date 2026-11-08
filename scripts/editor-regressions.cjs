@@ -572,3 +572,91 @@ test('Embedded exit: mocked Room saves submit strings and preserve untouched nei
   adapter.updateInner({status:'valid',dirty:true,value:{direction:1,extra:[true,null]}});await app.saveActiveDocument();
   assert.equal(typeof payload.exits[0],'string');assert.equal(JSON.parse(payload.exits[0]).direction,1);assert.equal(payload.exits[1],second);
 });
+
+const { specialEditorRules } = load('src/domain/world-resource-editor.ts');
+test('Specials: lambda rows use code editors with ordered labels and preserved source text', async () => {
+  const lambdas=["lambda ctx: ctx.require_position('standing')",'lambda ctx: (\n    ctx.say("hello")\n)'];
+  const editor=await payloadEditor({areaId:'A',specialFunction:lambdas},{rules:specialEditorRules});
+  const root=valueEditor(editor.root,{options:editor.options});const functions=editor.root.children.find(n=>n.key==='specialFunction');
+  assert.equal(root.childLabel(functions,1),'Special Function');
+  const list=valueEditor(functions,{path:'/specialFunction',rule:specialEditorRules['/specialFunction'],options:editor.options});
+  assert.equal(list.childLabel(functions.children[0],0),'Lambda 1');
+  const rule=list.childRule(functions.children[0],0);assert.equal(rule.editor,'code');assert.equal(rule.type,'string');assert.equal(rule.stringFormat,undefined);
+  const row=valueEditor(functions.children[0],{rule});assert.equal(row.codeEditor,true);assert.equal(row.embeddedJson,false);
+  row.edited.listener=()=>editor.edited();row.scalarChanged('lambda ctx: ctx.say("changed")\n');
+  assert.equal(editor.stateChange.last.value.specialFunction[0],'lambda ctx: ctx.say("changed")\n');
+  assert.equal(editor.stateChange.last.value.specialFunction[1],lambdas[1]);
+});
+test('Specials: add, reorder and remove operate on the exact ordered string list', async () => {
+  const node=json.createJsonNode(['lambda ctx: True','lambda ctx: False']);
+  const list=valueEditor(node,{path:'/specialFunction',rule:specialEditorRules['/specialFunction']});
+  const first=node.children[0];list.addCodeEntry();assert.equal(node.children.length,3);assert.equal(node.children[2].scalar,'');
+  list.move(0,1);assert.equal(node.children[1],first);assert.deepEqual(json.jsonNodeValue(node),['lambda ctx: False','lambda ctx: True','']);
+  list.remove(node.children[2],2);assert.deepEqual(json.jsonNodeValue(node),['lambda ctx: False','lambda ctx: True']);
+  list.readonly=true;list.addCodeEntry();assert.equal(node.children.length,2);
+});
+test('Specials: new and existing saves keep lambda strings and select the Specials endpoint', async () => {
+  for(const existing of [false,true]) {
+    let sent;const app=appWith({save:async(_base,_proxy,endpoint,payload,isExisting)=>{sent={endpoint,payload,isExisting};return {...payload,id:'special'};}});
+    app.activeKind='specials';const source=["lambda ctx: ctx.require_position('fighting')",'lambda ctx: ctx.say("hello")\n'];
+    app.replaceDraft({areaId:'A',mobVnum:'001',name:'spec_custom',comment:'note',specialFunction:source},existing?'special':'new');
+    assert.equal(app.usesJsonPayloadEditor(),true);assert.equal(app.payloadEditorLabel,'Special');assert.equal(app.payloadEditorRules,specialEditorRules);
+    const editor=await payloadEditor(app.resourceDraft,{rules:specialEditorRules});editor.stateChange.listener=state=>app.updatePayloadEditor(state);
+    const comment=editor.root.children.find(n=>n.key==='comment');json.updateJsonScalar(comment,'changed');editor.edited();
+    await app.saveActiveDocument();assert.equal(sent.isExisting,existing);assert.equal(sent.endpoint,existing?'/api/v1/specials/special':'/api/v1/specials');
+    assert.deepEqual(sent.payload.specialFunction,source);assert.equal(sent.payload.mobVnum,'001');
+  }
+});
+test('Specials: invalid JSON and non-string lambda entries block saves without losing text', async () => {
+  let writes=0;const app=appWith({save:async()=>{writes++;}});app.activeKind='specials';app.replaceDraft({areaId:'A',specialFunction:['lambda ctx: True']});
+  const editor=await payloadEditor(app.resourceDraft,{rules:specialEditorRules});editor.stateChange.listener=state=>app.updatePayloadEditor(state);
+  editor.switchMode('json');editor.editRaw('{broken');await app.saveActiveDocument();assert.equal(writes,0);assert.equal(editor.rawText,'{broken');
+  editor.editRaw('{"areaId":"A","specialFunction":[{"lambda":"text"}]}');assert.equal(editor.issues[0].path,'/specialFunction/0');await app.saveActiveDocument();assert.equal(writes,0);
+  editor.editRaw('{"areaId":"A","specialFunction":["lambda ctx: False"]}');assert.equal(app.fieldJsonInvalid,false);assert.equal(app.resourceDraft.specialFunction[0],'lambda ctx: False');
+});
+
+const { gameEditorRules } = load('src/domain/game-editor.ts');
+const gameFixture={id:'ruleset-id',kind:'ruleset',status:'active',version:{family:'ROM',lineage:['ROM24'],semver:'1.0',createdAt:'2026-01-01T00:00:00Z',notes:'sample'},enums:{directions:{north:0,east:1}},classes:{mage:{enabled:true,bonuses:[1,null,'text']}},combat:{damage:{multipliers:[1,2,3]}},groupRewards:{default:{value:4}},clans:{one:{title:'One'}},integrity:{contentHash:'hash',build:{source:'fixture',toolVersion:'1',extra:{flag:false}}},denyList:['example'],custom:{unknown:[true,null,4]}};
+test('Game Data: top-level loading uses the game endpoint and preserves the entire ruleset', async () => {
+  let endpoint;const app=appWith({list:async(_base,_proxy,path)=>{endpoint=path;return [structuredClone(gameFixture)];}});app.activeKind='game';
+  assert.equal(app.usesJsonPayloadEditor(),true);assert.equal(app.payloadEditorLabel,'Game Data');assert.equal(app.payloadEditorRules,gameEditorRules);
+  assert.equal(app.requiresAreaFilter(),false);await app.loadActiveDocuments(false);assert.equal(endpoint,'/api/v1/game');
+  await app.selectResource('ruleset-id');assert.deepEqual(app.resourceDraft.custom,gameFixture.custom);assert.deepEqual(app.resourceDraft.combat,gameFixture.combat);
+  const editor=await payloadEditor(app.resourceDraft,{rules:gameEditorRules,requireObject:true,readOnlyPaths:['/id']});
+  assert.equal(editor.stateChange.last.status,'valid');assert.deepEqual(editor.stateChange.last.value.groupRewards,gameFixture.groupRewards);
+});
+test('Game Data: nested edits preserve unrelated tables, unknown fields and scalar types', async () => {
+  const app=appWith();app.activeKind='game';app.replaceDraft(structuredClone(gameFixture),'ruleset-id');
+  const editor=await payloadEditor(app.resourceDraft,{rules:gameEditorRules,requireObject:true,readOnlyPaths:['/id']});editor.stateChange.listener=state=>app.updatePayloadEditor(state);
+  const classes=editor.root.children.find(n=>n.key==='classes'),mage=classes.children[0],enabled=mage.children.find(n=>n.key==='enabled');
+  enabled.scalar=false;editor.edited();
+  assert.equal(app.resourceDraft.classes.mage.enabled,false);assert.deepEqual(app.resourceDraft.custom,gameFixture.custom);
+  assert.deepEqual(app.resourceDraft.enums,gameFixture.enums);assert.deepEqual(app.resourceDraft.integrity,gameFixture.integrity);
+  assert.deepEqual(JSON.parse(app.resourceDraftText).classes.mage.bonuses,[1,null,'text']);
+});
+test('Game Data: malformed JSON and incorrect section types retain editable text and recover', async () => {
+  const app=appWith();app.activeKind='game';app.replaceDraft(structuredClone(gameFixture),'ruleset-id');
+  const editor=await payloadEditor(app.resourceDraft,{rules:gameEditorRules,readOnlyPaths:['/id']});editor.stateChange.listener=state=>app.updatePayloadEditor(state);editor.switchMode('json');
+  editor.editRaw('{invalid');assert.equal(app.fieldJsonInvalid,true);assert.equal(editor.rawText,'{invalid');assert.equal(app.resourceDraft.id,'ruleset-id');
+  editor.editRaw(JSON.stringify({...gameFixture,enums:[]}));assert.ok(editor.issues.some(x=>x.path==='/enums'));
+  editor.editRaw(JSON.stringify({...gameFixture,version:{...gameFixture.version,lineage:[12]}}));assert.ok(editor.issues.some(x=>x.path==='/version/lineage/0'));
+  editor.editRaw(JSON.stringify({...gameFixture,status:'draft'}));assert.equal(app.fieldJsonInvalid,false);assert.equal(app.resourceDraft.status,'draft');
+});
+test('Game Data: ID protection and local edits respect Stay and Discard', async () => {
+  const app=appWith();app.activeKind='game';app.replaceDraft(structuredClone(gameFixture),'ruleset-id');
+  const editor=await payloadEditor(app.resourceDraft,{rules:gameEditorRules,readOnlyPaths:['/id']});editor.stateChange.listener=state=>app.updatePayloadEditor(state);editor.switchMode('json');
+  editor.editRaw(JSON.stringify({...gameFixture,id:'changed'}));assert.equal(editor.stateChange.last.status,'invalid');
+  const navigation=app.setActiveKind('rooms');app.finishDraftDecision(false);await navigation;assert.equal(app.activeKind,'game');
+  assert.equal(JSON.parse(editor.rawText).id,'changed');await discard(app,()=>app.setActiveKind('rooms'));assert.equal(app.activeKind,'rooms');assert.equal(app.fieldJsonInvalid,false);
+});
+test('Game Data: unsupported write methods never reach the API for new or loaded documents', async () => {
+  for(const existing of [false,true]) {
+    let writes=0;const app=appWith({save:async()=>{writes++;}});app.activeKind='game';app.replaceDraft({...structuredClone(gameFixture),...(existing?{}:{id:undefined})},existing?'ruleset-id':'new');
+    assert.equal(app.saveBlocked,true);await app.saveActiveDocument();assert.equal(writes,0);assert.match(app.resourceMessage,/supports loading only/);
+    assert.match(app.createRequest.blocked,/supports loading only/);
+  }
+});
+test('Game Data: selecting a different document closes its optional JSON preview', async () => {
+  const app=appWith();app.activeKind='game';app.resourceDocuments=[structuredClone(gameFixture),{...structuredClone(gameFixture),id:'second'}];
+  await app.selectResource('ruleset-id');app.gamePreviewExpanded=true;await app.selectResource('second');assert.equal(app.gamePreviewExpanded,false);assert.equal(app.selectedResourceId,'second');
+});

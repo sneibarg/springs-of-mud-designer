@@ -16,9 +16,6 @@ export const areaChildNavItems = [
   { id: "items" as FeatureKind, label: "Items" },
   { id: "shops" as FeatureKind, label: "Shops" },
   { id: "resets" as FeatureKind, label: "Resets" },
-];
-
-export const mobileChildNavItems = [
   { id: "specials" as FeatureKind, label: "Specials" },
 ];
 

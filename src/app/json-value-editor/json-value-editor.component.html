@@ -1,4 +1,4 @@
-<section class="json-node" [class.scalar-node]="!isCollection && !embeddedJson" [attr.data-json-node]="node.id">
+<section class="json-node" [class.scalar-node]="!isCollection && !embeddedJson && !codeEditor" [class.code-node]="codeEditor" [attr.data-json-node]="node.id">
   @if (embeddedJson) {
     <som-json-string-editor [id]="controlId" tabindex="-1" role="group" [attr.aria-label]="label + ' embedded JSON editor'"
       [node]="node" [label]="label" [readonly]="locked" (edited)="edited.emit()" />
@@ -6,15 +6,20 @@
   <div class="node-heading">
     @if (isCollection) {
       <button type="button" class="node-toggle" [id]="controlId" [attr.aria-expanded]="node.expanded"
-        [attr.aria-controls]="controlId + '-children'" (click)="node.expanded = !node.expanded">
+        [attr.aria-controls]="controlId + '-children'" (click)="toggleExpanded()">
         {{ node.expanded ? '▾' : '▸' }} {{ label || '(empty property name)' }}
       </button>
-      <span class="node-type">{{ node.type }} · {{ node.children.length }} {{ node.type === 'array' ? 'items' : 'properties' }}</span>
+      @if (rule?.itemEditor === 'code') {
+        <span class="node-type">{{ node.children.length }} ordered lambdas</span>
+      } @else {
+        <span class="node-type">{{ node.type }} · {{ node.children.length }} {{ node.type === 'array' ? 'items' : 'properties' }}</span>
+      }
     } @else {
       <label [for]="controlId">{{ label || '(empty property name)' }}</label>
+      @if (codeEditor) { <span class="node-type">Python</span> }
       @if (showTools || locked) { <span class="node-type">{{ showTools ? node.type : '' }}{{ locked ? ' · read-only' : '' }}</span> }
     }
-    @if (showTools && !structureLocked && (types.length > 1 || !types.includes(node.type))) {
+    @if (showTools && !codeEditor && !structureLocked && (types.length > 1 || !types.includes(node.type))) {
       <button type="button" class="text-button" (click)="startTypeChange()" [attr.aria-label]="'Change type of ' + label">Change type</button>
     }
   </div>
@@ -35,7 +40,10 @@
 
   @switch (node.type) {
     @case ('string') {
-      @if (node.multiline) {
+      @if (codeEditor) {
+        <textarea class="code-input" [id]="controlId" [ngModel]="node.text" (ngModelChange)="scalarChanged($event)"
+          [disabled]="locked" rows="4" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="lambda ctx: ..."></textarea>
+      } @else if (node.multiline) {
         <textarea [id]="controlId" [ngModel]="node.text" (ngModelChange)="scalarChanged($event)"
           [disabled]="locked" rows="2" spellcheck="false"></textarea>
       } @else {
@@ -59,12 +67,13 @@
 
   @if (isCollection) {
     <div [id]="controlId + '-children'" [hidden]="!node.expanded" class="node-children">
+      @if (renderChildren) {
       @for (child of node.children; track child.id; let index = $index) {
-        <div class="child-row" [class.collection-row]="child.type === 'object' || child.type === 'array' || childRule(child, index)?.stringFormat === 'json-object'"
+        <div class="child-row" [class.collection-row]="child.type === 'object' || child.type === 'array' || childRule(child, index)?.stringFormat === 'json-object' || childRule(child, index)?.editor === 'code'"
           [class.multiline-row]="child.type === 'string' && child.multiline">
           <som-json-value-editor [node]="child" [path]="childPath(child, index)" [label]="childLabel(child, index)"
             [options]="options" [showTools]="showTools" [rule]="childRule(child, index)" [readonly]="locked" (edited)="edited.emit()" />
-          @if (showTools) {
+          @if (showTools || rule?.itemEditor === 'code') {
           <div class="child-actions">
             @if (node.type === 'array') {
               <button type="button" class="text-button" (click)="move(index, -1)" [disabled]="index === 0 || orderLocked"
@@ -97,7 +106,9 @@
             </div>
           }
         </div>
-      } @empty { <p class="node-empty">Empty {{ node.type }}. Add {{ node.type === 'array' ? 'an item' : 'a property' }} to get started.</p> }
+      } @empty {
+        <p class="node-empty">{{ rule?.itemEditor === 'code' ? 'No lambdas configured. Add a lambda to get started.' : 'Empty ' + node.type + '. Add ' + (node.type === 'array' ? 'an item' : 'a property') + ' to get started.' }}</p>
+      }
       @if (adding) {
         <div class="node-action">
           @if (node.type === 'object') {
@@ -115,9 +126,10 @@
       }
       @if (actionError) { <p class="field-error" [id]="actionErrorId" role="alert">{{ actionError }}</p> }
       @if (showTools || node.type === 'array') {
-      <button type="button" class="secondary-button add-button" [attr.data-add-button]="node.id" (click)="startAdd()" [disabled]="locked || (node.type === 'array' && orderLocked)">
-        Add {{ node.type === 'array' ? 'item' : 'property' }} to {{ label }}
+      <button type="button" class="secondary-button add-button" [attr.data-add-button]="node.id" (click)="rule?.itemEditor === 'code' ? addCodeEntry() : startAdd()" [disabled]="locked || (node.type === 'array' && orderLocked)">
+        Add {{ rule?.itemEditor === 'code' ? 'lambda' : node.type === 'array' ? 'item' : 'property' }} to {{ label }}
       </button>
+      }
       }
     </div>
   }
