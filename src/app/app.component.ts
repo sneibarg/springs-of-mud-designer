@@ -1,12 +1,17 @@
 import { CommonModule } from "@angular/common";
-import { Component, OnInit } from "@angular/core";
+import { ChangeDetectorRef, Component, ElementRef, HostListener, OnInit, ViewChild } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { SomApiService } from "./api.service";
 import { GuardListComponent } from "./guard-list.component";
 import { ResourceFormComponent, type ResourceFormDocument } from "./resource-form.component";
-import { apiResources, initialDraft, workQueue } from "../data";
+import { JsonPayloadEditorComponent } from "./json-payload-editor/json-payload-editor.component";
+import { itemEditorRules } from "../domain/item-editor";
+import { mobileEditorRules, roomEditorRules } from "../domain/world-resource-editor";
+import type { JsonEditorRules, JsonEditorState } from "../domain/json-editor";
+import { apiResources, workQueue } from "../data";
 import {
-  buildCreateRequest,
+  buildApiUrl,
+  resolveFetchBaseUrl,
   loadDesignerSettings,
   readSavedApiBaseUrl,
   readSavedApiProxyEnabled,
@@ -14,7 +19,7 @@ import {
   saveDesignerSettings,
 } from "../api";
 import type { DesignerTheme } from "../api";
-import type { ApiHealth, ApiResource, DesignerDraft, EditableValue, FeatureKind } from "../types/common";
+import type { ApiHealth, ApiResource, EditableValue, FeatureKind } from "../types/common";
 import {
   abilitiesNavItem,
   abilityChildNavItems,
@@ -57,10 +62,23 @@ type ResourceStatus = "idle" | "loading" | "saving";
 @Component({
   selector: "som-root",
   standalone: true,
-  imports: [CommonModule, FormsModule, GuardListComponent, ResourceFormComponent],
+  imports: [CommonModule, FormsModule, GuardListComponent, ResourceFormComponent, JsonPayloadEditorComponent],
   templateUrl: "./app.component.html",
 })
 export class AppComponent implements OnInit {
+  readonly payloadReadOnlyPaths = ["/id"];
+
+  usesJsonPayloadEditor(): boolean {
+    return this.activeKind === "items" || this.activeKind === "mobiles" || this.activeKind === "rooms";
+  }
+
+  get payloadEditorRules(): JsonEditorRules {
+    return this.activeKind === "mobiles" ? mobileEditorRules : this.activeKind === "rooms" ? roomEditorRules : itemEditorRules;
+  }
+
+  get payloadEditorLabel(): string {
+    return this.activeKind === "mobiles" ? "Mobile" : this.activeKind === "rooms" ? "Room" : "Item";
+  }
   readonly apiResources = apiResources;
   readonly workQueue = workQueue;
   readonly navItems = navItems;
@@ -71,7 +89,6 @@ export class AppComponent implements OnInit {
   readonly abilityChildNavItems = abilityChildNavItems;
 
   activeKind: FeatureKind = "spells";
-  draft: DesignerDraft = { ...initialDraft };
   apiBaseUrl = readSavedApiBaseUrl();
   apiBaseUrlInput = this.apiBaseUrl;
   useDevProxy = readSavedApiProxyEnabled();
@@ -85,11 +102,119 @@ export class AppComponent implements OnInit {
   resourceDraft: ResourceDocument = this.createEmptyDraft("spells");
   resourceDraftText = this.toPrettyJson(this.resourceDraft);
   resourceMessage = "";
-  resourceStatus: ResourceStatus = "idle";
+  rawJsonError = "";
+  fieldJsonInvalid = false;
+  searchQuery = "";
+  editorIdentity = 0;
+  private baseline = this.resourceDraftText;
+  private draftRevision = 0;
+  private workspaceVersion = 0;
+  private loadVersion = 0;
+  private loading = false;
+  private saving = false;
+  private serverIdentity = buildApiUrl(this.apiBaseUrl, this.useDevProxy, "");
+  @ViewChild("unsavedDialog") private unsavedDialog?: ElementRef<HTMLDialogElement>;
+  private pendingDraftDecision?: (discard: boolean) => void;
   selectedResourceId = "new";
   selectedResourceAreaId = "";
 
-  constructor(private readonly api: SomApiService) {}
+  constructor(private readonly api: SomApiService, private readonly changeDetector: ChangeDetectorRef) {}
+
+  get resourceStatus(): ResourceStatus {
+    return this.saving ? "saving" : this.loading ? "loading" : "idle";
+  }
+
+  get isDirty(): boolean {
+    return this.fieldJsonInvalid || this.resourceDraftText !== this.baseline;
+  }
+
+  get saveBlocked(): boolean {
+    return this.saving || this.loading || this.fieldJsonInvalid || Boolean(this.rawJsonError);
+  }
+
+  get filteredDocuments(): ResourceDocument[] {
+    const query = this.searchQuery.trim().toLocaleLowerCase();
+    return query ? this.resourceDocuments.filter((document) =>
+      JSON.stringify(document).toLocaleLowerCase().includes(query)) : this.resourceDocuments;
+  }
+
+  @HostListener("window:beforeunload", ["$event"])
+  beforeUnload(event: BeforeUnloadEvent): void {
+    if (this.isDirty) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  }
+
+  private async canReplaceDraft(): Promise<boolean> {
+    if (!this.isDirty) return true;
+    if (this.pendingDraftDecision) return false;
+    return new Promise<boolean>((resolve) => {
+      this.pendingDraftDecision = resolve;
+      this.unsavedDialog?.nativeElement.showModal();
+    });
+  }
+
+  finishDraftDecision(discard: boolean): void {
+    this.unsavedDialog?.nativeElement.close();
+    this.pendingDraftDecision?.(discard);
+    this.pendingDraftDecision = undefined;
+  }
+
+  async saveAndContinue(): Promise<void> {
+    await this.saveActiveDocument();
+    if (!this.isDirty) this.finishDraftDecision(true);
+  }
+
+  private invalidateWorkspace(): void {
+    this.workspaceVersion++;
+    this.loadVersion++;
+    this.loading = false;
+  }
+
+  private replaceDraft(document: ResourceDocument, selectedId = "new"): void {
+    this.resourceDraft = structuredClone(document);
+    this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
+    this.baseline = this.resourceDraftText;
+    this.selectedResourceId = selectedId;
+    this.rawJsonError = "";
+    this.fieldJsonInvalid = false;
+    this.editorIdentity++;
+    this.draftRevision++;
+  }
+
+  updateRawJson(text: string): void {
+    if (this.fieldJsonInvalid) return;
+    this.resourceDraftText = text;
+    this.draftRevision++;
+    try {
+      this.resourceDraft = this.parseDraft(text);
+      this.rawJsonError = "";
+      this.editorIdentity++;
+    } catch (error) {
+      this.rawJsonError = error instanceof Error ? error.message : "Invalid JSON.";
+    }
+  }
+
+  updateFieldValidity(invalid: boolean): void {
+    this.fieldJsonInvalid = invalid;
+    this.draftRevision++;
+  }
+
+  updatePayloadEditor(state: JsonEditorState, documentKey: string | number = this.editorIdentity): void {
+    if (!this.usesJsonPayloadEditor() || documentKey !== this.editorIdentity) return;
+    this.fieldJsonInvalid = state.status === "invalid";
+    if (state.status === "valid") {
+      if (!state.value || typeof state.value !== "object" || Array.isArray(state.value)) {
+        this.fieldJsonInvalid = true;
+        return;
+      }
+      this.resourceDraft = state.value as ResourceDocument;
+      this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
+    }
+    this.draftRevision++;
+    this.changeDetector.markForCheck();
+  }
 
   get activeFieldNames(): string[] {
     const fieldNames = new Set(["id", ...this.activeResource.fields]);
@@ -116,14 +241,19 @@ export class AppComponent implements OnInit {
   }
 
   get createRequest(): unknown {
-    return buildCreateRequest(this.apiBaseUrl, this.useDevProxy, this.activeResource, {
-      name: this.draft.name,
-      kind: this.draft.kind,
-      areaId: this.draft.areaId,
-      target: this.draft.target,
-      level: this.draft.level,
-      notes: this.draft.notes,
-    });
+    try {
+      const operation = this.buildSaveOperation();
+      return {
+        method: operation.isExistingDocument ? "PUT" : "POST",
+        url: buildApiUrl(this.apiBaseUrl, this.useDevProxy, operation.endpoint),
+        routing: resolveFetchBaseUrl(this.apiBaseUrl, this.useDevProxy) === ""
+          ? "Same-origin /api; development target is configured in proxy.conf.json."
+          : "Direct to configured API server",
+        body: operation.payload,
+      };
+    } catch (error) {
+      return { blocked: error instanceof Error ? error.message : "Correct the draft before saving." };
+    }
   }
 
   ngOnInit(): void {
@@ -131,14 +261,14 @@ export class AppComponent implements OnInit {
     void this.loadSettings();
   }
 
-  setActiveKind(kind: FeatureKind): void {
+  async setActiveKind(kind: FeatureKind): Promise<void> {
+    if (kind === this.activeKind || !await this.canReplaceDraft()) return;
+    this.invalidateWorkspace();
     this.activeKind = kind;
-    this.draft = {
-      ...this.draft,
-      kind,
-    };
+    this.searchQuery = "";
     this.resetResourceWorkspace();
-    void this.loadActiveKindData();
+    this.changeDetector.markForCheck();
+    if (kind !== "settings") void this.loadActiveKindData();
   }
 
   async applyApiBaseUrl(): Promise<void> {
@@ -159,8 +289,7 @@ export class AppComponent implements OnInit {
   }
 
   async testApiBaseUrl(): Promise<void> {
-    this.apiBaseUrl = this.apiBaseUrlInput;
-    await this.refreshHealth();
+    this.health = await this.api.checkHealth(this.apiBaseUrlInput, this.useDevProxy);
   }
 
   async toggleDevProxy(): Promise<void> {
@@ -195,78 +324,73 @@ export class AppComponent implements OnInit {
     }
   }
 
-  async loadActiveDocuments(): Promise<void> {
+  async loadActiveDocuments(confirmDiscard = true): Promise<void> {
+    if (confirmDiscard && !await this.canReplaceDraft()) return;
     const resource = this.activeResource;
     const endpoint = this.buildListEndpoint(resource);
-
+    const workspace = this.workspaceVersion;
+    const request = ++this.loadVersion;
+    const revision = this.draftRevision;
+    const selection = this.selectedResourceId;
+    const isCurrent = () => workspace === this.workspaceVersion && request === this.loadVersion;
     if (!endpoint) {
       this.resourceDocuments = [];
-      this.resourceMessage = `Select an area to load ${resource.label.toLowerCase()}.`;
+      this.resourceMessage = "Select an area to load " + resource.label.toLowerCase() + ".";
+      this.changeDetector.markForCheck();
       return;
     }
-
-    this.resourceStatus = "loading";
-    this.resourceMessage = "";
-
+    this.loading = true;
+    this.resourceMessage = "Loading " + resource.label.toLowerCase() + "…";
+    this.changeDetector.markForCheck();
     try {
       const payload = await this.api.list<unknown>(this.apiBaseUrl, this.useDevProxy, endpoint);
+      if (!isCurrent()) return;
       this.resourceDocuments = payload
-        .map((document) => this.normalizeDocument(document, this.activeKind))
+        .map((document) => this.normalizeDocument(document, resource.kind))
         .sort((left, right) => this.compareDocuments(left, right));
-
-      if (this.activeKind === "areas") {
-        this.areas = this.resourceDocuments.map((document) => normalizeArea(document as AreaView));
-      }
-
-      this.resourceMessage = `Loaded ${this.resourceDocuments.length} ${resource.label.toLowerCase()}.`;
-      this.selectResource(this.selectedResourceId === "new" ? "new" : this.selectedResourceId);
+      if (resource.kind === "areas") this.areas = this.resourceDocuments.map((document) => normalizeArea(document as AreaView));
+      this.resourceMessage = "Loaded " + this.resourceDocuments.length + " " + resource.label.toLowerCase() + ".";
+      if (revision === this.draftRevision && (confirmDiscard || !this.isDirty)) this.openResource(selection);
     } catch (error) {
-      this.resourceDocuments = [];
-      this.resourceMessage =
-        error instanceof Error
-          ? `Could not load ${resource.label.toLowerCase()}: ${error.message}`
-          : `Could not load ${resource.label.toLowerCase()}.`;
+      if (!isCurrent()) return;
+      this.resourceMessage = "Could not load " + resource.label.toLowerCase() + ": " + (error instanceof Error ? error.message : "Request failed.");
     } finally {
-      this.resourceStatus = "idle";
+      if (isCurrent()) {
+        this.loading = false;
+        this.changeDetector.markForCheck();
+      }
     }
   }
 
-  selectResource(documentId: string): void {
-    this.selectedResourceId = documentId;
-
-    if (documentId === "new") {
-      this.resourceDraft = this.createEmptyDraft(this.activeKind);
-      this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
-      return;
-    }
-
-    const selectedDocument = this.resourceDocuments.find((document) => document.id === documentId);
-
-    if (!selectedDocument) {
-      this.selectedResourceId = "new";
-      this.resourceDraft = this.createEmptyDraft(this.activeKind);
-    } else {
-      this.resourceDraft = structuredClone(selectedDocument);
-    }
-
-    this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
+  async selectResource(documentId: string): Promise<void> {
+    if (documentId === this.selectedResourceId || !await this.canReplaceDraft()) return;
+    this.invalidateWorkspace();
+    this.openResource(documentId);
+    this.changeDetector.markForCheck();
   }
 
-  createNewResource(): void {
-    this.selectResource("new");
+  private openResource(documentId: string): void {
+    const selected = this.resourceDocuments.find((document) => document.id === documentId);
+    this.replaceDraft(selected ?? this.newDraftForArea(), selected?.id ?? "new");
+  }
 
-    if (this.requiresAreaFilter(this.activeKind) && this.selectedResourceAreaId) {
-      this.resourceDraft = {
-        ...this.resourceDraft,
-        areaId: this.selectedResourceAreaId,
-      };
-      this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
-    }
+  private newDraftForArea(): ResourceDocument {
+    const draft = this.createEmptyDraft(this.activeKind);
+    return this.requiresAreaFilter() ? { ...draft, areaId: this.selectedResourceAreaId } : draft;
+  }
+
+  async createNewResource(): Promise<void> {
+    if (!await this.canReplaceDraft()) return;
+    this.invalidateWorkspace();
+    this.replaceDraft(this.newDraftForArea());
+    this.changeDetector.markForCheck();
   }
 
   updateResourceDraft(nextDraft: ResourceFormDocument): void {
+    if (this.rawJsonError) return;
     this.resourceDraft = nextDraft as ResourceDocument;
     this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
+    this.draftRevision++;
   }
 
   updateResourceGuards(guards: Record<string, EditableValue>[]): void {
@@ -276,61 +400,81 @@ export class AppComponent implements OnInit {
     });
   }
 
-  async saveActiveDocument(): Promise<void> {
-    const resource = this.activeResource;
-    const parsedDraft = this.parseDraftText();
-
-    if (!parsedDraft) {
-      return;
-    }
-
-    const payload = this.normalizeDocument(parsedDraft, this.activeKind);
-    const validationMessage = this.validateDocument(payload, resource);
-
-    if (validationMessage) {
-      this.resourceMessage = validationMessage;
-      return;
-    }
-
+  private buildSaveOperation(): { payload: ResourceDocument; endpoint: string; isExistingDocument: boolean } {
+    if (this.fieldJsonInvalid) throw new Error("Correct invalid field JSON before saving.");
+    if (this.rawJsonError) throw new Error(this.rawJsonError);
+    const payload = this.normalizeDocument(this.parseDraft(this.resourceDraftText), this.activeKind);
+    if (this.selectedResourceId !== "new") payload.id = this.selectedResourceId;
+    const message = this.validateDocument(payload, this.activeResource);
+    if (message) throw new Error(message);
     const isExistingDocument = Boolean(payload.id);
-    const endpoint = isExistingDocument ? `${resource.endpoint}/${payload.id}` : resource.endpoint;
+    return {
+      payload,
+      isExistingDocument,
+      endpoint: isExistingDocument ? this.activeResource.endpoint + "/" + payload.id : this.activeResource.endpoint,
+    };
+  }
 
-    this.resourceStatus = "saving";
-    this.resourceMessage = "";
-
+  async saveActiveDocument(): Promise<void> {
+    if (this.saving || this.loading) return;
+    let operation: ReturnType<AppComponent["buildSaveOperation"]>;
     try {
-      const savedPayload = await this.api.save<unknown>(
-        this.apiBaseUrl,
-        this.useDevProxy,
-        endpoint,
-        payload,
-        isExistingDocument,
-      );
-      const savedDocument = this.normalizeDocument(savedPayload, this.activeKind);
-      this.resourceDocuments = [
-        ...this.resourceDocuments.filter((document) => document.id !== savedDocument.id),
-        savedDocument,
-      ].sort((left, right) => this.compareDocuments(left, right));
-      this.resourceDraft = structuredClone(savedDocument);
-      this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
-      this.selectedResourceId = savedDocument.id ?? "new";
-      this.resourceMessage = `${isExistingDocument ? "Updated" : "Created"} ${this.resourceLabel(savedDocument)}.`;
+      operation = this.buildSaveOperation();
     } catch (error) {
-      this.resourceMessage =
-        error instanceof Error
-          ? `Could not save ${resource.label.toLowerCase()}: ${error.message}`
-          : `Could not save ${resource.label.toLowerCase()}.`;
+      this.resourceMessage = error instanceof Error ? error.message : "Correct the draft before saving.";
+      return;
+    }
+    const { payload, endpoint, isExistingDocument } = operation;
+    const resource = this.activeResource;
+    const workspace = this.workspaceVersion;
+    const revision = this.draftRevision;
+    this.saving = true;
+    this.resourceMessage = "Saving document…";
+    try {
+      const response = await this.api.save<unknown>(this.apiBaseUrl, this.useDevProxy, endpoint, payload, isExistingDocument);
+      const saved = this.normalizeDocument(response, resource.kind);
+      if (workspace !== this.workspaceVersion) return;
+      this.resourceDocuments = this.resourceDocuments.filter((document) => document.id !== saved.id);
+      if (!this.requiresAreaFilter(resource.kind) || saved.areaId === this.selectedResourceAreaId) {
+        this.resourceDocuments = [...this.resourceDocuments, saved].sort((left, right) => this.compareDocuments(left, right));
+      }
+      if (resource.kind === "areas") {
+        this.areas = [...this.areas.filter((area) => area.id !== saved.id), normalizeArea(saved as AreaView)].sort(compareAreas);
+      }
+      if (revision === this.draftRevision) {
+        this.replaceDraft(saved, saved.id ?? "new");
+      } else {
+        // Attach a server-assigned identity without replacing newer edits.
+        this.resourceDraft = { ...this.resourceDraft, id: saved.id };
+        try {
+          const newer = this.parseDraft(this.resourceDraftText);
+          this.resourceDraftText = this.toPrettyJson({ ...newer, id: saved.id });
+        } catch {
+          // Preserve invalid raw text verbatim; keep the identity separately.
+        }
+        this.selectedResourceId = saved.id ?? "new";
+        this.baseline = this.toPrettyJson(saved);
+      }
+      this.resourceMessage = (isExistingDocument ? "Updated" : "Created") + " document." + (this.isDirty ? " Newer edits remain unsaved." : "");
+    } catch (error) {
+      if (workspace === this.workspaceVersion) this.resourceMessage = "Could not save " + resource.label.toLowerCase() + ": " + (error instanceof Error ? error.message : "Request failed.");
     } finally {
-      this.resourceStatus = "idle";
+      this.saving = false;
+      this.changeDetector.markForCheck();
     }
   }
 
-  onAreaFilterChange(areaId: string): void {
+  async onAreaFilterChange(areaId: string, select?: HTMLSelectElement): Promise<void> {
+    if (areaId === this.selectedResourceAreaId) return;
+    if (!await this.canReplaceDraft()) {
+      if (select) select.value = this.selectedResourceAreaId;
+      return;
+    }
+    this.invalidateWorkspace();
     this.selectedResourceAreaId = areaId;
-    this.selectedResourceId = "new";
-    this.resourceDraft = this.createEmptyDraft(this.activeKind);
-    this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
-    void this.loadActiveDocuments();
+    this.resourceDocuments = [];
+    this.replaceDraft(this.newDraftForArea());
+    void this.loadActiveDocuments(false);
   }
 
   resourceLabel(document: ResourceDocument): string {
@@ -367,33 +511,30 @@ export class AppComponent implements OnInit {
 
   private resetResourceWorkspace(): void {
     this.resourceDocuments = [];
-    this.selectedResourceId = "new";
-    this.resourceDraft = this.createEmptyDraft(this.activeKind);
-    this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
+    this.replaceDraft(this.newDraftForArea());
     this.resourceMessage = "";
   }
 
   private async loadActiveKindData(): Promise<void> {
+    const workspace = this.workspaceVersion;
     if (this.requiresAreaFilter()) {
       await this.loadAreasForFilter();
-
-      if (!this.selectedResourceAreaId) {
-        this.selectedResourceAreaId = this.areas.find((area) => area.id)?.id ?? "";
-      }
+      if (workspace !== this.workspaceVersion) return;
+      if (!this.selectedResourceAreaId) this.selectedResourceAreaId = this.areas.find((area) => area.id)?.id ?? "";
+      if (!this.isDirty) this.replaceDraft(this.newDraftForArea());
     }
-
-    await this.loadActiveDocuments();
+    if (workspace === this.workspaceVersion) await this.loadActiveDocuments(false);
   }
 
   private async loadAreasForFilter(): Promise<void> {
-    if (this.areas.length > 0) {
-      return;
-    }
-
+    if (this.areas.length > 0) return;
+    const server = this.apiBaseUrl;
+    const proxy = this.useDevProxy;
     try {
-      this.areas = (await this.api.getAreas(this.apiBaseUrl, this.useDevProxy)).map(normalizeArea).sort(compareAreas);
+      const areas = (await this.api.getAreas(server, proxy)).map(normalizeArea).sort(compareAreas);
+      if (server === this.apiBaseUrl && proxy === this.useDevProxy) this.areas = areas;
     } catch {
-      this.areas = [];
+      if (server === this.apiBaseUrl && proxy === this.useDevProxy) this.areas = [];
     }
   }
 
@@ -473,19 +614,10 @@ export class AppComponent implements OnInit {
     return "";
   }
 
-  private parseDraftText(): ResourceDocument | null {
-    try {
-      const parsed = JSON.parse(this.resourceDraftText) as ResourceDocument;
-
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("Draft must be a JSON object.");
-      }
-
-      return parsed;
-    } catch (error) {
-      this.resourceMessage = error instanceof Error ? `Invalid JSON: ${error.message}` : "Invalid JSON draft.";
-      return null;
-    }
+  private parseDraft(text: string): ResourceDocument {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Draft must be a JSON object.");
+    return parsed as ResourceDocument;
   }
 
   private toPrettyJson(value: unknown): string {
@@ -495,12 +627,20 @@ export class AppComponent implements OnInit {
   private async loadSettings(): Promise<void> {
     const settings = await loadDesignerSettings();
     this.applySettings(settings.apiBaseUrl, settings.useDevProxy, settings.theme);
+    const workspace = this.workspaceVersion;
     await this.refreshHealth();
-    await this.loadAreasForFilter();
-    await this.loadActiveKindData();
+    if (workspace === this.workspaceVersion && this.activeKind !== "settings") await this.loadActiveKindData();
   }
 
   private applySettings(apiBaseUrl: string, useDevProxy: boolean, theme: DesignerTheme): void {
+    const serverIdentity = buildApiUrl(apiBaseUrl, useDevProxy, "");
+    if (this.serverIdentity !== serverIdentity) {
+      this.invalidateWorkspace();
+      this.areas = [];
+      this.selectedResourceAreaId = "";
+      this.resetResourceWorkspace();
+    }
+    this.serverIdentity = serverIdentity;
     this.apiBaseUrl = apiBaseUrl;
     this.apiBaseUrlInput = apiBaseUrl;
     this.useDevProxy = useDevProxy;

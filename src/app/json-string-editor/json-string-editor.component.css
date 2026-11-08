@@ -1,0 +1,8 @@
+:host { display: block; min-width: 0; }
+:host(:focus-visible) { outline: 2px solid #398b68; outline-offset: 2px; }
+.embedded-json { min-width: 0; border: 1px solid var(--json-border, #d2ded4); border-radius: 6px; padding: 8px; }
+label { display: block; font-size: 13px; font-weight: 600; }
+p { margin: 6px 0; color: var(--json-muted, #526457); font-size: 12px; overflow-wrap: anywhere; }
+textarea { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 100px; resize: vertical; background: var(--json-surface, #fff); color: inherit; border: 1px solid var(--json-border, #d2ded4); border-radius: 5px; padding: 8px; font: 13px/1.4 Consolas, monospace; }
+.field-error { color: var(--json-error, #a52a20); }
+textarea:focus-visible { outline: 2px solid #398b68; outline-offset: 2px; }

@@ -1,0 +1,125 @@
+<section class="json-node" [class.scalar-node]="!isCollection && !embeddedJson" [attr.data-json-node]="node.id">
+  @if (embeddedJson) {
+    <som-json-string-editor [id]="controlId" tabindex="-1" role="group" [attr.aria-label]="label + ' embedded JSON editor'"
+      [node]="node" [label]="label" [readonly]="locked" (edited)="edited.emit()" />
+  } @else {
+  <div class="node-heading">
+    @if (isCollection) {
+      <button type="button" class="node-toggle" [id]="controlId" [attr.aria-expanded]="node.expanded"
+        [attr.aria-controls]="controlId + '-children'" (click)="node.expanded = !node.expanded">
+        {{ node.expanded ? '▾' : '▸' }} {{ label || '(empty property name)' }}
+      </button>
+      <span class="node-type">{{ node.type }} · {{ node.children.length }} {{ node.type === 'array' ? 'items' : 'properties' }}</span>
+    } @else {
+      <label [for]="controlId">{{ label || '(empty property name)' }}</label>
+      @if (showTools || locked) { <span class="node-type">{{ showTools ? node.type : '' }}{{ locked ? ' · read-only' : '' }}</span> }
+    }
+    @if (showTools && !structureLocked && (types.length > 1 || !types.includes(node.type))) {
+      <button type="button" class="text-button" (click)="startTypeChange()" [attr.aria-label]="'Change type of ' + label">Change type</button>
+    }
+  </div>
+  @if (showTools) { <small class="node-path">{{ path || '/' }}</small> }
+
+  @if (changingType) {
+    <div class="node-action">
+      <label>New type for {{ label }}
+        <select [(ngModel)]="pendingType" [attr.data-type-for]="node.id" [disabled]="locked">
+          @for (type of types; track type) { <option [value]="type">{{ type }}</option> }
+        </select>
+      </label>
+      <p>Changing type replaces this value and any contents with an empty value of the chosen type.</p>
+      <button type="button" class="secondary-button" (click)="applyType()" [disabled]="locked">Replace value</button>
+      <button type="button" class="text-button" (click)="cancelAction('type')">Cancel type change</button>
+    </div>
+  }
+
+  @switch (node.type) {
+    @case ('string') {
+      @if (node.multiline) {
+        <textarea [id]="controlId" [ngModel]="node.text" (ngModelChange)="scalarChanged($event)"
+          [disabled]="locked" rows="2" spellcheck="false"></textarea>
+      } @else {
+        <input [id]="controlId" type="text" [ngModel]="node.text" (ngModelChange)="scalarChanged($event)" [disabled]="locked" />
+        @if (showTools && !locked) {
+          <button type="button" class="text-button" (click)="useMultiline()" [attr.aria-label]="'Use multiline input for ' + label">Multiline</button>
+        }
+      }
+    }
+    @case ('number') {
+      <input [id]="controlId" type="text" inputmode="decimal" [ngModel]="node.text"
+        (ngModelChange)="scalarChanged($event)" [disabled]="locked"
+        [attr.aria-invalid]="node.error ? 'true' : null" [attr.aria-describedby]="node.error ? errorId : null" />
+    }
+    @case ('boolean') {
+      <input [id]="controlId" type="checkbox" [ngModel]="node.scalar" (ngModelChange)="booleanChanged($event)" [disabled]="locked" />
+    }
+    @case ('null') { <output [id]="controlId" tabindex="-1">null</output> }
+  }
+  @if (node.error) { <p class="field-error" [id]="errorId" role="alert">{{ node.error }}</p> }
+
+  @if (isCollection) {
+    <div [id]="controlId + '-children'" [hidden]="!node.expanded" class="node-children">
+      @for (child of node.children; track child.id; let index = $index) {
+        <div class="child-row" [class.collection-row]="child.type === 'object' || child.type === 'array' || childRule(child, index)?.stringFormat === 'json-object'"
+          [class.multiline-row]="child.type === 'string' && child.multiline">
+          <som-json-value-editor [node]="child" [path]="childPath(child, index)" [label]="childLabel(child, index)"
+            [options]="options" [showTools]="showTools" [rule]="childRule(child, index)" [readonly]="locked" (edited)="edited.emit()" />
+          @if (showTools) {
+          <div class="child-actions">
+            @if (node.type === 'array') {
+              <button type="button" class="text-button" (click)="move(index, -1)" [disabled]="index === 0 || orderLocked"
+                [attr.aria-label]="'Move ' + childLabel(child, index) + ' up'">Move up</button>
+              <button type="button" class="text-button" (click)="move(index, 1)" [disabled]="index === node.children.length - 1 || orderLocked"
+                [attr.aria-label]="'Move ' + childLabel(child, index) + ' down'">Move down</button>
+            } @else {
+              <button type="button" class="text-button" (click)="startRename(child)" [disabled]="childLocked(child, index)"
+                [attr.aria-label]="'Rename ' + childLabel(child, index)">Rename</button>
+            }
+            <button type="button" class="text-button" (click)="removingId = child.id" [disabled]="childLocked(child, index)"
+              [attr.aria-label]="'Remove ' + childLabel(child, index)">Remove</button>
+          </div>
+          }
+          @if (renamingId === child.id) {
+            <div class="node-action">
+              <label>Property name for {{ child.key }}
+                <input [(ngModel)]="renameText" [attr.data-rename-for]="child.id" [disabled]="locked"
+                  [attr.aria-invalid]="actionError ? 'true' : null" [attr.aria-describedby]="actionError ? actionErrorId : null" />
+              </label>
+              <button type="button" class="secondary-button" (click)="rename(child, index)" [disabled]="locked">Apply name</button>
+              <button type="button" class="text-button" (click)="cancelAction('rename', child)">Cancel rename</button>
+            </div>
+          }
+          @if (removingId === child.id) {
+            <div class="node-action">
+              <p>Remove {{ childLabel(child, index) }} and its contents?</p>
+              <button type="button" class="secondary-button" (click)="remove(child, index)" [disabled]="locked">Confirm removal</button>
+              <button type="button" class="text-button" (click)="cancelAction('remove', child)">Keep value</button>
+            </div>
+          }
+        </div>
+      } @empty { <p class="node-empty">Empty {{ node.type }}. Add {{ node.type === 'array' ? 'an item' : 'a property' }} to get started.</p> }
+      @if (adding) {
+        <div class="node-action">
+          @if (node.type === 'object') {
+            <label>New property name<input [(ngModel)]="newKey" [attr.data-add-for]="node.id" [disabled]="locked"
+              [attr.aria-invalid]="actionError ? 'true' : null" [attr.aria-describedby]="actionError ? actionErrorId : null" /></label>
+          }
+          <label>Type of new {{ node.type === 'array' ? 'item' : 'property' }}
+            <select [(ngModel)]="newType" [disabled]="locked" [attr.data-add-for]="node.type === 'array' ? node.id : null">
+              @for (type of addTypes; track type) { <option [value]="type">{{ type }}</option> }
+            </select>
+          </label>
+          <button type="button" class="secondary-button" (click)="add()" [disabled]="locked">Insert {{ node.type === 'array' ? 'item' : 'property' }}</button>
+          <button type="button" class="text-button" (click)="cancelAction('add')">Cancel add</button>
+        </div>
+      }
+      @if (actionError) { <p class="field-error" [id]="actionErrorId" role="alert">{{ actionError }}</p> }
+      @if (showTools || node.type === 'array') {
+      <button type="button" class="secondary-button add-button" [attr.data-add-button]="node.id" (click)="startAdd()" [disabled]="locked || (node.type === 'array' && orderLocked)">
+        Add {{ node.type === 'array' ? 'item' : 'property' }} to {{ label }}
+      </button>
+      }
+    </div>
+  }
+  }
+</section>

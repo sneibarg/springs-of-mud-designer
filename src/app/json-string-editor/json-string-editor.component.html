@@ -1,0 +1,13 @@
+<div class="embedded-json">
+  @if (innerValue) {
+    <som-json-payload-editor [value]="innerValue" [documentKey]="node.id" [label]="label"
+      [requireObject]="true" [readonly]="readonly" (stateChange)="updateInner($event)" />
+  } @else {
+    <label [for]="sourceId">{{ label }} JSON source</label>
+    <p>This entry could not be opened as a JSON object. Its original text is preserved below.</p>
+    <textarea [id]="sourceId" [ngModel]="sourceText" (ngModelChange)="updateSource($event)" [disabled]="readonly"
+      rows="5" spellcheck="false" aria-invalid="true" [attr.aria-describedby]="sourceId + '-error'"></textarea>
+    <p class="field-error" [id]="sourceId + '-error'" role="alert">{{ node.error }}</p>
+    <button type="button" class="secondary-button" [attr.aria-label]="'Apply JSON for ' + label" [disabled]="readonly" (click)="applySource()">Apply JSON</button>
+  }
+</div>

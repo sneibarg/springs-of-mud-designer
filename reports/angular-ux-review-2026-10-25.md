@@ -142,3 +142,31 @@ These are improvements rather than additional confirmed defects:
 ## Suggested order
 
 First stabilize draft ownership and invalid-input handling, then guard identity and asynchronous context handling. Repair the mobile grid next. Finally align the preview with saving and finish search and accessible feedback. These changes address reliability and discoverability before visual polish.
+
+## Resolution — 2026-11-07
+
+All nine findings above have implementation changes in the current working tree.
+The optional design recommendations remain separate from these fixes.
+
+| Finding | Implemented behavior | Verification |
+| --- | --- | --- |
+| UX-001 | Dirty drafts trigger an accessible Save and continue / Discard changes / Stay dialog before navigation, selection, New, area changes, or Reload. Repeated resource/document selection preserves the draft. Browser exit uses a dirty-work guard. Failed saves keep the dialog and input. | Browser verified Stay and Discard; state regressions cover save success/failure, reload, New, area/document cancellation, and beforeunload. |
+| UX-002 | Valid raw JSON immediately updates the structured model. Invalid raw text is retained and disables structured edits and saving until corrected. | Browser verified raw name survives a structured Target edit; regression checks cover invalid raw protection. |
+| UX-003 | Guard rows have stable editor-only keys through typing and moves. Add, move, and remove focus the appropriate remaining control. Keys never enter persisted records. | Browser sequentially typed `abc` without losing focus, then verified move/remove ordering and focus. State regression checks identities and payload fields. |
+| UX-004 | Complex-field parsing runs on edits, exposes associated errors, blocks Save/raw editing while invalid, and clears buffers on document identity changes. | Browser verified invalid payload error, disabled Save/raw controls, and buffer reset after approved selection; typed-value preservation is covered by state tests. |
+| UX-005 | Workspace/read generations and draft revisions reject stale responses and preserve newer input. Reads use the captured resource kind; overlapping writes are blocked. Current load state belongs to the latest request. | Mocked delayed reads/writes, obsolete failures, startup timing, duplicate-save prevention, and post-submit edits pass regression tests. No live persistence writes were used. |
+| UX-006 | Stacked layout resets Raw JSON to the full-width column; relevant grid children can shrink and long output wraps. | Browser measured no document overflow at 390, 768, 1179, 1181, and 1440px. At 390px the structured editor starts at x=33px and is 309px wide. Dark-theme errors were visually inspected with long draft text. |
+| UX-007 | Preview and Save share the same validated operation builder, including normalized payload, selected identity, POST/PUT choice, endpoint, effective URL, and routing explanation. Invalid drafts show a blocked explanation. | Browser verified existing spell previews PUT; mocked saves match the preview payload and method; new-record POST and selected-ID preservation pass state tests. |
+| UX-008 | Search is explicitly scoped to loaded records, filters names/vnums/nested content, and provides counts and no-results feedback with a persistent label. | Browser query returned 0 of 97 and one New-document button; clearing restored 97 records. State regressions cover names, vnums, nested content, and case handling. |
+| UX-009 | Routine feedback uses polite status regions; JSON errors use alerts plus aria-invalid/aria-describedby. Resource navigation and selection expose aria-current. Focus is visible and the unsaved dialog uses native modal focus handling. | Browser inspected status/current-state markup and associated error controls. Dialog initially focused Stay; guard focus was verified. No screen-reader conformance claim is made. |
+
+### Final checks
+
+- `npm run lint` — passed (TypeScript checking).
+- `npm run build` — passed (production Angular/template compilation and budgets).
+- `npm run build -- --configuration development` — passed.
+- `npm run test:editor` — 15 focused state regressions passed. This new script uses Node's built-in runner, the installed TypeScript transpiler, mocked transport, and minimal Angular decorator/event stubs; it is not an Angular integration test target.
+- `git diff --check` — passed; Git printed line-ending conversion notices.
+- Browser verification used the local development preview with live backend **read** requests. Successful/failed writes and delayed completion were simulated in state tests. No live game content was created, updated, or deleted.
+- Browser console inspection reported no errors. Light and dark layouts were checked; the original light preference and default viewport were restored.
+- Full screen-reader testing, exhaustive keyboard traversal, zoom coverage, and live backend write/error-format validation remain outside the completed verification.

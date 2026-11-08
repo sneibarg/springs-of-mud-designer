@@ -1,0 +1,38 @@
+<section class="payload-editor" [attr.aria-label]="label + ' editor'">
+  <div class="payload-heading">
+    <h4>{{ label }}</h4>
+    <div class="mode-buttons" role="group" [attr.aria-label]="label + ' editing mode'">
+      @if (mode === 'form') {
+        <button type="button" class="secondary-button" [attr.aria-pressed]="showTools" (click)="showTools = !showTools">Field tools</button>
+      }
+      <button type="button" class="secondary-button" [attr.aria-pressed]="mode === 'form'" (click)="switchMode('form')"
+        [disabled]="invalid || hasIncomingValue">Form</button>
+      <button type="button" class="secondary-button" [attr.aria-pressed]="mode === 'json'" (click)="switchMode('json')"
+        [disabled]="invalid || hasIncomingValue">JSON</button>
+    </div>
+  </div>
+  @if (hasIncomingValue) {
+    <div class="incoming-value" role="alert">
+      <p>An incoming update is available. Your local edits have been kept.</p>
+      <button type="button" class="secondary-button" (click)="keepDraft()">Keep my draft</button>
+      <button type="button" class="secondary-button" (click)="loadIncoming()">Replace draft with incoming value</button>
+    </div>
+  }
+  @if (invalid) {
+    <div class="validation-summary" [id]="editorId + '-errors'" role="alert">
+      <strong>Correct these values before saving or changing mode.</strong>
+      <ul>@for (issue of issues; track $index) { <li><code>{{ issue.path || '/' }}</code>: {{ issue.message }}</li> }</ul>
+    </div>
+  }
+  @if (mode === 'form' && root) {
+    <som-json-value-editor [node]="root" [label]="label" [options]="options" [showTools]="showTools" [readonly]="readonly || hasIncomingValue" (edited)="edited()" />
+  }
+  @if (mode === 'json') {
+    <label class="payload-raw" [for]="editorId + '-raw'">{{ label }} JSON</label>
+    <textarea class="raw-input" [id]="editorId + '-raw'" [ngModel]="rawText" (ngModelChange)="editRaw($event)" rows="10"
+      spellcheck="false" [disabled]="readonly || hasIncomingValue" [attr.aria-invalid]="invalid ? 'true' : null"
+      [attr.aria-describedby]="invalid ? editorId + '-errors' : editorId + '-help'"></textarea>
+    <p [id]="editorId + '-help'">JSON types are preserved. Read-only fields must keep their original values.</p>
+  }
+  <p class="payload-status" role="status" aria-live="polite">{{ dirty ? 'Unsaved edits' : 'No editor changes' }}{{ invalid ? ' · Needs correction' : '' }}</p>
+</section>

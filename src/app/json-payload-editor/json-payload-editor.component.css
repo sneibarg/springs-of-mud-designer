@@ -1,0 +1,18 @@
+:host { display: block; min-width: 0; }
+.payload-editor { --json-surface: #fff; --json-muted: #526457; --json-border: #d2ded4; --json-error: #a52a20; --json-inset: #f5f8f4; color: #243a2c; }
+:host-context([data-theme="dark"]) .payload-editor { --json-surface: #17231b; --json-muted: #b5c9ba; --json-border: #465d4c; --json-error: #ffb4ab; --json-inset: #102017; color: #e2ebe4; }
+.payload-heading { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+h4 { margin: 0; font-size: 16px; }
+p { margin: 6px 0 12px; color: var(--json-muted); font-size: 13px; }
+.mode-buttons { display: flex; gap: 6px; }
+.mode-buttons button { min-height: 32px; padding: 5px 10px; font-size: 12px; }
+.mode-buttons button[aria-pressed="true"] { background: #2f6f55; color: #fff; }
+.validation-summary, .incoming-value { padding: 12px; border: 1px solid var(--json-border); border-radius: 8px; margin-bottom: 16px; overflow-wrap: anywhere; }
+.validation-summary { color: var(--json-error); }
+ul { padding-left: 20px; margin-bottom: 0; }
+li + li { margin-top: 6px; }
+.payload-raw { display: block; margin-bottom: 8px; font-weight: 700; }
+.raw-input { box-sizing: border-box; width: 100%; max-width: 100%; min-height: 180px; padding: 10px; border: 1px solid var(--json-border); border-radius: 6px; background: var(--json-inset); color: inherit; resize: vertical; font: 13px/1.5 "Cascadia Code", Consolas, monospace; }
+.payload-status { margin: 8px 0 0; font-size: 12px; }
+button:focus-visible, textarea:focus-visible { outline: 2px solid #398b68; outline-offset: 3px; }
+button:disabled { opacity: .6; cursor: not-allowed; }

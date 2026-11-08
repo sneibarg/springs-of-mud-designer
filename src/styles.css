@@ -826,6 +826,68 @@ button:disabled {
   min-width: 0;
 }
 
+.editor-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.unsaved-dialog {
+  max-width: min(520px, calc(100vw - 32px));
+  border: 1px solid #9bad9e;
+  border-radius: 12px;
+  padding: 24px;
+  color: inherit;
+  background: #fff;
+}
+
+.unsaved-dialog::backdrop {
+  background: #0008;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+:root[data-theme="dark"] .unsaved-dialog {
+  color: #e2ebe4;
+  background: #17231b;
+}
+
+.editor-fieldset legend {
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.field-error {
+  display: block;
+  color: #a52a20;
+  overflow-wrap: anywhere;
+}
+
+:root[data-theme="dark"] .field-error {
+  color: #ffb4ab;
+}
+
+.workspace, .editor-surface, .content-grid > *, .overview-copy, .area-list {
+  min-width: 0;
+}
+
+.area-list-item, .area-message, .inspector pre {
+  overflow-wrap: anywhere;
+}
+
+.inspector pre {
+  white-space: pre-wrap;
+}
+
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #398b68;
+  outline-offset: 3px;
+}
+
 .resource-form {
   align-items: start;
 }
@@ -854,6 +916,19 @@ button:disabled {
 
 .raw-json-field {
   grid-column: 2;
+}
+
+.resource-payload-editor {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.content-grid.payload-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.payload-workspace .inspector {
+  position: static;
 }
 
 .json-editor-field textarea {
@@ -1661,6 +1736,9 @@ button:disabled {
 }
 
 @media (max-width: 1180px) {
+  .raw-json-field, .resource-payload-editor {
+    grid-column: 1 / -1;
+  }
   .content-grid,
   .overview-band {
     grid-template-columns: 1fr;

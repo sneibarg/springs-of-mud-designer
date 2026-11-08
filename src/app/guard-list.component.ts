@@ -1,5 +1,5 @@
 import { CommonModule } from "@angular/common";
-import { Component, EventEmitter, Input, Output } from "@angular/core";
+import { Component, ElementRef, EventEmitter, Input, Output, ViewChild } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import type { EditableValue } from "../types/common";
 
@@ -10,7 +10,7 @@ type GuardRecord = Record<string, EditableValue>;
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <section class="structured-field guard-list-editor">
+    <section class="structured-field guard-list-editor" #guardList>
       <div class="structured-field-heading">
         <div>
           <strong>Guards</strong>
@@ -25,8 +25,9 @@ type GuardRecord = Record<string, EditableValue>;
 
       <div class="structured-list">
         <article
-          *ngFor="let guard of normalizedGuards; let guardIndex = index"
+          *ngFor="let guard of normalizedGuards; let guardIndex = index; trackBy: trackGuard"
           class="guard-card"
+          [attr.data-guard-key]="trackGuard(guardIndex, guard)"
           draggable="true"
           (dragstart)="onDragStart(guardIndex)"
           (dragover)="onDragOver($event)"
@@ -110,8 +111,28 @@ type GuardRecord = Record<string, EditableValue>;
 export class GuardListComponent {
   @Input() guards: unknown = [];
   @Output() guardsChange = new EventEmitter<GuardRecord[]>();
+  @ViewChild("guardList") private guardList?: ElementRef<HTMLElement>;
 
   private draggedIndex: number | null = null;
+  private nextKey = 0;
+  private readonly keys = new WeakMap<GuardRecord, number>();
+
+  trackGuard = (_index: number, guard: GuardRecord): number => {
+    let key = this.keys.get(guard);
+    if (key === undefined) {
+      key = this.nextKey++;
+      this.keys.set(guard, key);
+    }
+    return key;
+  };
+
+  private focusGuard(guard?: GuardRecord): void {
+    const key = guard ? this.trackGuard(0, guard) : null;
+    setTimeout(() => {
+      const selector = key === null ? ".structured-field-heading button" : `[data-guard-key="${key}"] input`;
+      this.guardList?.nativeElement.querySelector<HTMLElement>(selector)?.focus();
+    });
+  }
 
   get normalizedGuards(): GuardRecord[] {
     return Array.isArray(this.guards)
@@ -120,11 +141,15 @@ export class GuardListComponent {
   }
 
   addGuard(): void {
-    this.emitGuards([...this.normalizedGuards, { predicate: "", messageKey: "" }]);
+    const guard = { predicate: "", messageKey: "" };
+    this.emitGuards([...this.normalizedGuards, guard]);
+    this.focusGuard(guard);
   }
 
   removeGuard(index: number): void {
-    this.emitGuards(this.normalizedGuards.filter((_guard, guardIndex) => guardIndex !== index));
+    const remaining = this.normalizedGuards.filter((_guard, guardIndex) => guardIndex !== index);
+    this.emitGuards(remaining);
+    this.focusGuard(remaining[Math.min(index, remaining.length - 1)]);
   }
 
   moveGuard(fromIndex: number, toIndex: number): void {
@@ -136,6 +161,7 @@ export class GuardListComponent {
     const [movedGuard] = nextGuards.splice(fromIndex, 1);
     nextGuards.splice(toIndex, 0, movedGuard);
     this.emitGuards(nextGuards);
+    this.focusGuard(movedGuard);
   }
 
   onDragStart(index: number): void {
@@ -162,6 +188,7 @@ export class GuardListComponent {
       }
 
       const nextGuard = { ...guard };
+      this.keys.set(nextGuard, this.trackGuard(guardIndex, guard));
 
       if (!keepWhenBlank && !value.trim()) {
         delete nextGuard[fieldName];
@@ -203,7 +230,7 @@ export class GuardListComponent {
   }
 
   private emitGuards(guards: GuardRecord[]): void {
-    this.guardsChange.emit(guards.map((guard) => ({ ...guard })));
+    this.guardsChange.emit(guards);
   }
 
   private isGuardRecord(value: unknown): value is GuardRecord {

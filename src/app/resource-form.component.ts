@@ -1,5 +1,5 @@
 import { CommonModule } from "@angular/common";
-import { Component, EventEmitter, Input, Output } from "@angular/core";
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 
 export type ResourceFormDocument = Record<string, unknown>;
@@ -45,24 +45,38 @@ export type ResourceFormDocument = Record<string, unknown>;
           [name]="fieldName"
           rows="5"
           spellcheck="false"
-          (blur)="commitJson(fieldName, $any($event.target).value)"
+          [attr.aria-invalid]="jsonErrors.has(fieldName) ? 'true' : null"
+          [attr.aria-describedby]="jsonErrors.has(fieldName) ? 'field-error-' + fieldName : null"
           (ngModelChange)="updateJsonText(fieldName, $event)"
         ></textarea>
+        <span *ngIf="jsonErrors.has(fieldName)" class="field-error" [id]="'field-error-' + fieldName" role="alert">
+          {{ jsonErrors.get(fieldName) }}
+        </span>
       </label>
     </form>
   `,
 })
-export class ResourceFormComponent {
+export class ResourceFormComponent implements OnChanges {
   @Input({ required: true }) draft: ResourceFormDocument = {};
   @Input({ required: true }) fieldNames: string[] = [];
+  @Input() documentIdentity = 0;
   @Output() draftChange = new EventEmitter<ResourceFormDocument>();
+  @Output() invalidJsonChange = new EventEmitter<boolean>();
 
   private jsonTextByField = new Map<string, string>();
+  readonly jsonErrors = new Map<string, string>();
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes["documentIdentity"]) {
+      this.jsonTextByField.clear();
+      this.jsonErrors.clear();
+    }
+  }
 
   inputType(fieldName: string): "text" | "number" | "boolean" | "json" {
     const value = this.draft[fieldName];
 
-    if (Array.isArray(value) || (typeof value === "object" && value !== null)) {
+    if (this.jsonTextByField.has(fieldName) || Array.isArray(value) || (typeof value === "object" && value !== null)) {
       return "json";
     }
 
@@ -117,15 +131,14 @@ export class ResourceFormComponent {
 
   updateJsonText(fieldName: string, value: string): void {
     this.jsonTextByField.set(fieldName, value);
-  }
-
-  commitJson(fieldName: string, value: string): void {
     try {
       const parsed = JSON.parse(value) as unknown;
-      this.jsonTextByField.delete(fieldName);
+      this.jsonErrors.delete(fieldName);
+      this.invalidJsonChange.emit(this.jsonErrors.size > 0);
       this.updateDraft(fieldName, parsed);
-    } catch {
-      this.jsonTextByField.set(fieldName, value);
+    } catch (error) {
+      this.jsonErrors.set(fieldName, error instanceof Error ? error.message : "Enter valid JSON.");
+      this.invalidJsonChange.emit(true);
     }
   }
 

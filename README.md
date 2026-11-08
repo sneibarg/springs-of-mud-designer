@@ -31,4 +31,69 @@ Use the in-app Settings page to point the designer at another API server.
 ```bash
 npm run build
 npm run lint
+npm run test:editor
 ```
+
+The editor regression checks use Node's built-in test runner with mocked transport
+and minimal Angular decorator/event stubs. They cover draft protection, JSON
+synchronization, guard identity, asynchronous responses, persistence previews, and
+search. They are state-level tests; browser verification is still needed for layout,
+focus, and accessibility behavior.
+
+## JSON payload editor
+
+Items, Mobiles, and Rooms use `JsonPayloadEditorComponent` for their compact Form
+and JSON editing modes.
+The standalone component accepts a parsed JSON value (including scalar roots),
+validates incoming data, and edits a private tree without mutating its input.
+
+```html
+<som-json-payload-editor
+  [documentKey]="documentIdentity"
+  [value]="draft"
+  label="Item"
+  [requireObject]="true"
+  [readOnlyPaths]="['/id']"
+  [rules]="itemRules"
+  [readonly]="saving"
+  (stateChange)="updateEditorState($event)"
+/>
+```
+
+`stateChange` emits a `JsonEditorState`: valid states include the complete typed
+value; invalid states include JSON Pointer paths and messages, with no savable
+value. The parent must block persistence while invalid. Change `documentKey` when
+opening/resetting a document, rather than on each edit. Feed emitted values back
+as-is to preserve row identity and pending input. An unrelated incoming value
+for the same dirty document requires an explicit Keep/Replace decision.
+
+The Form mode supports nested objects, heterogeneous arrays, explicit type
+changes, unique property names, keyboard reordering, and removal confirmation.
+Scalar fields use compact label/value rows and multiple columns when space allows.
+Nested collections start collapsed; expand them to edit their contents. Toggle
+Field tools to show types, JSON paths, and add/rename/remove/reorder controls.
+Invalid numeric/JSON text remains available for correction. Form/JSON switching
+is blocked until it is valid. UI identities, expansion state, and input buffers
+never enter the saved payload.
+
+Optional `JsonEditorRules` specify types, nullable values, integer fields, and
+array item and object property types by JSON Pointer. The Items adapter preserves the persistence
+API's string fields, integer level/weight/cost fields, and string arrays for
+`affectData` and `extraDescription`. It uses the existing area-scoped list and
+POST/PUT save flow. Mobiles preserves string flags/dice definitions and the
+structured `statusFlags` object. Rooms preserves boolean fields, integer timers
+and flags, serialized string exits, and the string-valued `mobiles` map. Each
+section protects its document ID and uses its own area-scoped list and collection.
+Unknown properties are preserved by the editor; backend
+acceptance and retention remain governed by the backend contract.
+
+Each Room exit opens an embedded compact Form/JSON editor for its JSON object.
+The adapter keeps the persistence format as a list of strings, preserves untouched
+exit text exactly, and encodes edits back to strings. Newly inserted exits start
+as `{}`. Malformed or non-object exit strings retain their original source for
+explicit correction; saving is blocked until the entry is a valid JSON object.
+Unrelated string fields are not interpreted as JSON.
+
+`npm run test:editor` also covers JSON type round-trips, invalid buffers,
+read-only paths, stable identities, external updates, and Items/Mobiles/Rooms persistence
+integration with mocked transport.

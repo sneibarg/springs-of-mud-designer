@@ -23,6 +23,7 @@ export function normalizeArea(area: AreaView): AreaView {
 
 export function normalizeRoom(room: RoomView): RoomView {
   return {
+    ...room,
     id: room.id,
     areaId: room.areaId ?? "",
     vnum: room.vnum ?? "",

@@ -1,4 +1,16 @@
 <div class="app-shell">
+  <dialog #unsavedDialog class="unsaved-dialog" aria-labelledby="unsaved-title" aria-describedby="unsaved-description"
+    (cancel)="$event.preventDefault(); finishDraftDecision(false)">
+    <h2 id="unsaved-title">Unsaved changes</h2>
+    <p id="unsaved-description">Save this document before continuing, discard your edits, or stay to keep editing.</p>
+    <p *ngIf="fieldJsonInvalid || rawJsonError" class="field-error">Stay and correct invalid JSON before saving.</p>
+    <p role="status" aria-live="polite">{{ resourceMessage }}</p>
+    <div class="dialog-actions">
+      <button class="secondary-button" type="button" autofocus (click)="finishDraftDecision(false)">Stay</button>
+      <button class="secondary-button" type="button" (click)="finishDraftDecision(true)">Discard changes</button>
+      <button class="primary-button" type="button" [disabled]="saveBlocked" (click)="saveAndContinue()">Save and continue</button>
+    </div>
+  </dialog>
   <aside class="sidebar">
     <div class="brand-row">
       <div class="brand-mark">SoM</div>
@@ -14,6 +26,7 @@
         class="nav-button"
         type="button"
         [class.active]="activeKind === item.id"
+        [attr.aria-current]="activeKind === item.id ? 'page' : null"
         (click)="setActiveKind(item.id)"
       >
         <span>{{ item.label }}</span>
@@ -24,6 +37,7 @@
           class="nav-section-label"
           type="button"
           [class.active]="activeKind === areaNavItem.id"
+          [attr.aria-current]="activeKind === areaNavItem.id ? 'page' : null"
           (click)="setActiveKind(areaNavItem.id)"
         >
           {{ areaNavItem.label }}
@@ -34,6 +48,7 @@
             class="nav-button sub-nav-button"
             type="button"
             [class.active]="activeKind === item.id"
+        [attr.aria-current]="activeKind === item.id ? 'page' : null"
             (click)="setActiveKind(item.id)"
           >
             {{ item.label }}
@@ -45,6 +60,7 @@
                 class="nav-button nested-sub-nav-button"
                 type="button"
                 [class.active]="activeKind === item.id"
+        [attr.aria-current]="activeKind === item.id ? 'page' : null"
                 (click)="setActiveKind(item.id)"
               >
                 {{ item.label }}
@@ -62,6 +78,7 @@
             class="nav-button sub-nav-button"
             type="button"
             [class.active]="activeKind === item.id"
+        [attr.aria-current]="activeKind === item.id ? 'page' : null"
             (click)="setActiveKind(item.id)"
           >
             {{ item.label }}
@@ -70,7 +87,7 @@
       </div>
     </nav>
 
-    <div class="sidebar-panel">
+    <div class="sidebar-panel" role="status" aria-live="polite">
       <span class="status-dot" [ngClass]="health.state"></span>
       <div>
         <strong>{{ health.state | titlecase }}</strong>
@@ -81,11 +98,11 @@
 
   <main class="workspace">
     <div class="topbar">
-      <div class="search-box">
-        <span aria-hidden="true">Search</span>
-        <input placeholder="Find resources, vnums, scripts" />
-      </div>
-      <button class="settings-button" type="button" (click)="setActiveKind('settings')">
+      <label class="search-box">
+        <span>Search loaded records</span>
+        <input [(ngModel)]="searchQuery" placeholder="Name, vnum, or content" [disabled]="activeKind === 'settings'" />
+      </label>
+      <button class="settings-button" [attr.aria-current]="activeKind === 'settings' ? 'page' : null" type="button" (click)="setActiveKind('settings')">
         Settings
       </button>
     </div>
@@ -163,7 +180,7 @@
         </div>
       </section>
 
-      <section class="content-grid">
+      <section class="content-grid" [class.payload-workspace]="usesJsonPayloadEditor()">
         <div class="editor-surface">
           <div class="section-heading">
             <div>
@@ -182,11 +199,12 @@
               Area
               <select
                 [ngModel]="selectedResourceAreaId"
-                (ngModelChange)="onAreaFilterChange($event)"
+                (ngModelChange)="onAreaFilterChange($event, areaSelect)"
+                #areaSelect
                 name="selectedResourceAreaId"
               >
                 <option value="">Select area</option>
-                <option *ngFor="let area of areas" [ngValue]="area.id ?? ''">
+                <option *ngFor="let area of areas" [value]="area.id ?? ''">
                   {{ area.vnum ? area.vnum + ' - ' + area.name : area.name || area.id }}
                 </option>
               </select>
@@ -196,7 +214,7 @@
                 class="secondary-button"
                 type="button"
                 (click)="loadActiveDocuments()"
-                [disabled]="resourceStatus === 'loading'"
+                [disabled]="resourceStatus !== 'idle'"
               >
                 {{ resourceStatus === 'loading' ? 'Loading' : 'Reload' }}
               </button>
@@ -210,33 +228,48 @@
             <aside class="area-list" aria-label="Loaded resources">
               <div class="area-list-heading">
                 <strong>{{ activeResource.label }}</strong>
-                <span>{{ resourceDocuments.length }}</span>
+                <span role="status">{{ filteredDocuments.length }} of {{ resourceDocuments.length }}</span>
               </div>
               <button
                 class="area-list-item"
                 type="button"
                 [class.active]="selectedResourceId === 'new'"
+                [attr.aria-current]="selectedResourceId === 'new' ? 'true' : null"
                 (click)="createNewResource()"
               >
                 <strong>New document</strong>
                 <span>Draft JSON payload</span>
               </button>
               <button
-                *ngFor="let document of resourceDocuments"
+                *ngFor="let document of filteredDocuments"
                 class="area-list-item"
                 type="button"
                 [class.active]="selectedResourceId === document.id"
+                [attr.aria-current]="selectedResourceId === document.id ? 'true' : null"
                 (click)="selectResource(document.id ?? 'new')"
               >
                 <strong>{{ resourceLabel(document) }}</strong>
                 <span>{{ resourceSecondaryLabel(document) }}</span>
               </button>
+              <p *ngIf="searchQuery && filteredDocuments.length === 0" role="status">No loaded records match your search.</p>
+              <p *ngIf="!searchQuery && resourceDocuments.length === 0 && resourceStatus === 'idle'">No records loaded. Choose an area or use Reload.</p>
             </aside>
 
-            <div class="structured-resource-editor">
+            @if (usesJsonPayloadEditor()) {
+              <som-json-payload-editor #payloadEditor class="resource-payload-editor"
+                [value]="resourceDraft" [documentKey]="editorIdentity" [label]="payloadEditorLabel"
+                [requireObject]="true" [readOnlyPaths]="payloadReadOnlyPaths" [rules]="payloadEditorRules"
+                [readonly]="resourceStatus === 'saving'" (stateChange)="updatePayloadEditor($event, payloadEditor.documentKey)" />
+            }
+
+            <fieldset *ngIf="!usesJsonPayloadEditor()" class="structured-resource-editor editor-fieldset" [disabled]="!!rawJsonError || resourceStatus === 'saving'">
+              <legend>Structured fields</legend>
+              <p *ngIf="rawJsonError">Correct Raw JSON Payload to continue editing these fields.</p>
               <som-resource-form
                 [draft]="resourceDraft"
                 [fieldNames]="structuredFieldNames"
+                [documentIdentity]="editorIdentity"
+                (invalidJsonChange)="updateFieldValidity($event)"
                 (draftChange)="updateResourceDraft($event)"
               ></som-resource-form>
               <som-guard-list
@@ -244,16 +277,22 @@
                 [guards]="resourceDraft['guards']"
                 (guardsChange)="updateResourceGuards($event)"
               ></som-guard-list>
-            </div>
+            </fieldset>
 
-            <label class="json-editor-field raw-json-field">
+            <label *ngIf="!usesJsonPayloadEditor()" class="json-editor-field raw-json-field">
               <span>Raw JSON Payload</span>
               <textarea
-                [(ngModel)]="resourceDraftText"
+                [ngModel]="resourceDraftText"
+                (ngModelChange)="updateRawJson($event)"
+                [disabled]="fieldJsonInvalid || resourceStatus === 'saving'"
+                [attr.aria-invalid]="rawJsonError ? 'true' : null"
+                [attr.aria-describedby]="rawJsonError ? 'raw-json-error' : 'raw-json-help'"
                 name="resourceDraftText"
                 spellcheck="false"
                 rows="12"
               ></textarea>
+              <span id="raw-json-help">Valid JSON updates the structured fields. Correct invalid field JSON before editing here.</span>
+              <span *ngIf="rawJsonError" id="raw-json-error" class="field-error" role="alert">{{ rawJsonError }}</span>
             </label>
           </div>
 
@@ -262,12 +301,14 @@
           </div>
 
           <div class="editor-actions">
-            <span class="area-message">{{ resourceMessage }}</span>
+            <span>{{ isDirty ? 'Unsaved changes' : 'No unsaved changes' }}</span>
+            <span class="area-message" role="status" aria-live="polite" aria-atomic="true">{{ resourceMessage }}</span>
+            <span *ngIf="fieldJsonInvalid" class="field-error" role="alert">Correct editor validation errors before saving.</span>
             <button
               class="primary-button"
               type="button"
               (click)="saveActiveDocument()"
-              [disabled]="resourceStatus === 'saving'"
+              [disabled]="saveBlocked"
             >
               {{ resourceStatus === 'saving' ? 'Saving' : 'Save Document' }}
             </button>
@@ -278,7 +319,7 @@
           <div class="section-heading compact">
             <div>
               <span>Request Preview</span>
-              <h3>Java API Contract</h3>
+              <h3>Current Save Operation</h3>
             </div>
           </div>
           <pre>{{ createRequest | json }}</pre>
