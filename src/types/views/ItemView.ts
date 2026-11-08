@@ -1,0 +1,23 @@
+export type ItemView = {
+  id?: string;
+  areaId: string;
+  vnum: string;
+  name: string;
+  shortDescription: string;
+  longDescription: string;
+  material: string;
+  itemType: string;
+  extraFlags: string;
+  wearFlags: string;
+  value0: string;
+  value1: string;
+  value2: string;
+  value3: string;
+  value4: string;
+  level: number;
+  weight: number;
+  cost: number;
+  condition: string;
+  affectData: string[];
+  extraDescription: string[];
+};

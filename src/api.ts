@@ -1,31 +1,25 @@
-import type { ApiHealth, ApiResource } from "./domain/types";
+import type { ApiResource } from "./types/common";
+import { environment } from "./environments/environment";
 
 export const DESIGNER_SETTINGS_STORAGE_KEY = "som-designer-settings";
 export const API_BASE_URL_STORAGE_KEY = "som-designer-api-base-url";
 export const API_PROXY_ENABLED_STORAGE_KEY = "som-designer-api-proxy-enabled";
-export const DEFAULT_API_BASE_URL = "http://localhost:9080";
-export const DEFAULT_API_PROXY_ENABLED = import.meta.env.DEV;
+export const THEME_STORAGE_KEY = "som-designer-theme";
+export const DEFAULT_API_BASE_URL = environment.designer.apiBaseUrl;
+export const DEFAULT_API_PROXY_ENABLED = environment.designer.useDevProxy;
+
+export type DesignerTheme = "light" | "dark";
 
 export type DesignerSettings = {
   apiBaseUrl: string;
   useDevProxy: boolean;
-};
-
-export type AuthUser = {
-  id: number;
-  username: string;
-  email: string;
-  role: string;
-};
-
-export type AuthSession = {
-  authenticated: boolean;
-  user?: AuthUser;
+  theme: DesignerTheme;
 };
 
 export const DEFAULT_DESIGNER_SETTINGS: DesignerSettings = {
   apiBaseUrl: DEFAULT_API_BASE_URL,
   useDevProxy: DEFAULT_API_PROXY_ENABLED,
+  theme: "light",
 };
 
 export function normalizeApiBaseUrl(value: string) {
@@ -33,118 +27,33 @@ export function normalizeApiBaseUrl(value: string) {
 }
 
 export async function loadDesignerSettings(): Promise<DesignerSettings> {
-  try {
-    const response = await fetch("/designer/settings");
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    return normalizeDesignerSettings((await response.json()) as Partial<DesignerSettings>);
-  } catch {
-    return DEFAULT_DESIGNER_SETTINGS;
-  }
+  return readDesignerSettings();
 }
 
 export async function saveDesignerSettings(settings: DesignerSettings) {
   const normalizedSettings = normalizeDesignerSettings(settings);
-  const response = await fetch("/designer/settings", {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(normalizedSettings),
-  });
+  window.localStorage.setItem(DESIGNER_SETTINGS_STORAGE_KEY, JSON.stringify(normalizedSettings));
+  window.localStorage.setItem(API_BASE_URL_STORAGE_KEY, normalizedSettings.apiBaseUrl);
+  window.localStorage.setItem(API_PROXY_ENABLED_STORAGE_KEY, String(normalizedSettings.useDevProxy));
+  window.localStorage.setItem(THEME_STORAGE_KEY, normalizedSettings.theme);
 
-  if (!response.ok) {
-    throw new Error(`Unable to save designer settings: HTTP ${response.status}`);
-  }
-
-  return normalizeDesignerSettings((await response.json()) as Partial<DesignerSettings>);
-}
-
-export async function loadAuthSession(): Promise<AuthSession> {
-  try {
-    const response = await fetch("/designer/auth/session");
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    return normalizeAuthSession((await response.json()) as Partial<AuthSession>);
-  } catch {
-    return { authenticated: false };
-  }
-}
-
-export async function loginDesigner(username: string, password: string): Promise<AuthSession> {
-  const response = await fetch("/designer/auth/login", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ username, password }),
-  });
-
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? `Login failed: HTTP ${response.status}`);
-  }
-
-  return normalizeAuthSession((await response.json()) as Partial<AuthSession>);
-}
-
-export async function logoutDesigner() {
-  await fetch("/designer/auth/logout", {
-    method: "POST",
-  });
+  return normalizedSettings;
 }
 
 export function readSavedApiBaseUrl() {
-  return DEFAULT_DESIGNER_SETTINGS.apiBaseUrl;
+  return readDesignerSettings().apiBaseUrl;
 }
 
 export function readSavedApiProxyEnabled() {
-  return DEFAULT_DESIGNER_SETTINGS.useDevProxy;
+  return readDesignerSettings().useDevProxy;
+}
+
+export function readSavedTheme() {
+  return readDesignerSettings().theme;
 }
 
 export function resolveFetchBaseUrl(apiBaseUrl: string, useDevProxy: boolean) {
-  return useDevProxy ? "" : normalizeApiBaseUrl(apiBaseUrl);
-}
-
-export async function checkApiHealth(
-  apiBaseUrl: string,
-  useDevProxy: boolean,
-): Promise<ApiHealth> {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 2500);
-  const baseUrl = normalizeApiBaseUrl(apiBaseUrl);
-  const fetchBaseUrl = resolveFetchBaseUrl(baseUrl, useDevProxy);
-
-  try {
-    const response = await fetch(`${fetchBaseUrl}/api/v1/game`, {
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      return {
-        state: "offline",
-        detail: `Backend answered with HTTP ${response.status}`,
-      };
-    }
-
-    return {
-      state: "online",
-      detail: useDevProxy ? `Connected through local proxy to ${baseUrl}` : `Connected to ${baseUrl}`,
-    };
-  } catch {
-    return {
-      state: "offline",
-      detail: useDevProxy ? `Local proxy cannot reach ${baseUrl}` : `Browser cannot reach ${baseUrl}`,
-    };
-  } finally {
-    window.clearTimeout(timeout);
-  }
+  return environment.designer.forceDevProxy || useDevProxy ? "" : normalizeApiBaseUrl(apiBaseUrl);
 }
 
 export function buildCreateRequest(
@@ -178,23 +87,29 @@ export function buildApiUrl(apiBaseUrl: string, useDevProxy: boolean, endpoint: 
 function normalizeDesignerSettings(settings: Partial<DesignerSettings>): DesignerSettings {
   return {
     apiBaseUrl: normalizeApiBaseUrl(settings.apiBaseUrl ?? "") || DEFAULT_API_BASE_URL,
-    useDevProxy:
-      typeof settings.useDevProxy === "boolean" ? settings.useDevProxy : DEFAULT_API_PROXY_ENABLED,
+    useDevProxy: environment.designer.forceDevProxy
+      ? true
+      : typeof settings.useDevProxy === "boolean"
+        ? settings.useDevProxy
+        : DEFAULT_API_PROXY_ENABLED,
+    theme: settings.theme === "dark" ? "dark" : "light",
   };
 }
 
-function normalizeAuthSession(session: Partial<AuthSession>): AuthSession {
-  if (!session.authenticated || !session.user) {
-    return { authenticated: false };
-  }
+function readDesignerSettings(): DesignerSettings {
+  try {
+    const storedSettings = window.localStorage.getItem(DESIGNER_SETTINGS_STORAGE_KEY);
 
-  return {
-    authenticated: true,
-    user: {
-      id: Number(session.user.id),
-      username: String(session.user.username ?? ""),
-      email: String(session.user.email ?? ""),
-      role: String(session.user.role ?? ""),
-    },
-  };
+    if (storedSettings) {
+      return normalizeDesignerSettings(JSON.parse(storedSettings) as Partial<DesignerSettings>);
+    }
+
+    return normalizeDesignerSettings({
+      apiBaseUrl: window.localStorage.getItem(API_BASE_URL_STORAGE_KEY) ?? DEFAULT_API_BASE_URL,
+      useDevProxy: window.localStorage.getItem(API_PROXY_ENABLED_STORAGE_KEY) === "true",
+      theme: window.localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light",
+    });
+  } catch {
+    return DEFAULT_DESIGNER_SETTINGS;
+  }
 }

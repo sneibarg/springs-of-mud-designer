@@ -1,0 +1,307 @@
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand-row">
+      <div class="brand-mark">SoM</div>
+      <div>
+        <h1>Designer</h1>
+        <span>Angular migration</span>
+      </div>
+    </div>
+
+    <nav class="main-nav" aria-label="Designer resources">
+      <button
+        *ngFor="let item of navItems"
+        class="nav-button"
+        type="button"
+        [class.active]="activeKind === item.id"
+        (click)="setActiveKind(item.id)"
+      >
+        <span>{{ item.label }}</span>
+      </button>
+
+      <div class="nav-group">
+        <button
+          class="nav-section-label"
+          type="button"
+          [class.active]="activeKind === areaNavItem.id"
+          (click)="setActiveKind(areaNavItem.id)"
+        >
+          {{ areaNavItem.label }}
+        </button>
+        <div class="sub-nav">
+          <button
+            *ngFor="let item of areaChildNavItems"
+            class="nav-button sub-nav-button"
+            type="button"
+            [class.active]="activeKind === item.id"
+            (click)="setActiveKind(item.id)"
+          >
+            {{ item.label }}
+          </button>
+          <div class="nested-nav-group">
+            <div class="nested-sub-nav">
+              <button
+                *ngFor="let item of mobileChildNavItems"
+                class="nav-button nested-sub-nav-button"
+                type="button"
+                [class.active]="activeKind === item.id"
+                (click)="setActiveKind(item.id)"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-section-label">{{ abilitiesNavItem.label }}</span>
+        <div class="sub-nav">
+          <button
+            *ngFor="let item of abilityChildNavItems"
+            class="nav-button sub-nav-button"
+            type="button"
+            [class.active]="activeKind === item.id"
+            (click)="setActiveKind(item.id)"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="sidebar-panel">
+      <span class="status-dot" [ngClass]="health.state"></span>
+      <div>
+        <strong>{{ health.state | titlecase }}</strong>
+        <span>{{ health.detail }}</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="workspace">
+    <div class="topbar">
+      <div class="search-box">
+        <span aria-hidden="true">Search</span>
+        <input placeholder="Find resources, vnums, scripts" />
+      </div>
+      <button class="settings-button" type="button" (click)="setActiveKind('settings')">
+        Settings
+      </button>
+    </div>
+
+    <section *ngIf="activeKind === 'settings'; else designerWorkspace" class="settings-only">
+      <div class="settings-panel">
+        <div class="section-heading">
+          <div>
+            <span>Designer Settings</span>
+            <h3>API Server</h3>
+          </div>
+        </div>
+        <div class="resource-summary">
+          <p>
+            Point the designer at the Java persistence server. In development, API requests are
+            routed through the Angular dev-server proxy so the browser does not call the backend
+            cross-origin.
+          </p>
+        </div>
+        <div class="settings-section">
+          <div class="section-heading compact">
+            <div>
+              <span>Appearance</span>
+              <h3>Theme</h3>
+            </div>
+          </div>
+          <label class="proxy-toggle settings-toggle">
+            <input
+              type="checkbox"
+              [ngModel]="theme === 'dark'"
+              (ngModelChange)="theme = $event ? 'dark' : 'light'; toggleTheme()"
+            />
+            <span>Use dark mode</span>
+          </label>
+        </div>
+        <div class="api-settings-form">
+          <label>
+            API Server
+            <input [(ngModel)]="apiBaseUrlInput" placeholder="http://localhost:9080" />
+          </label>
+          <button class="primary-button" type="button" (click)="applyApiBaseUrl()">Save</button>
+          <button class="secondary-button" type="button" (click)="testApiBaseUrl()">Test</button>
+        </div>
+        <label class="proxy-toggle">
+          <input type="checkbox" [(ngModel)]="useDevProxy" (change)="toggleDevProxy()" />
+          <span>Use Angular dev-server proxy for API requests</span>
+        </label>
+        <div class="settings-current">
+          <strong>Active server</strong>
+          <code>{{ apiBaseUrl }}</code>
+        </div>
+      </div>
+    </section>
+
+    <ng-template #designerWorkspace>
+      <section class="overview-band">
+        <div class="overview-copy">
+          <span class="eyebrow">{{ activeResource.endpoint }}</span>
+          <h2>{{ activeResource.label }} workspace</h2>
+          <p>{{ activeResource.summary }}</p>
+        </div>
+        <div class="overview-metrics" aria-label="Designer coverage">
+          <div class="metric">
+            <strong>{{ apiResources.length }}</strong>
+            <span>API resources</span>
+          </div>
+          <div class="metric">
+            <strong>{{ readyEditorCount }}</strong>
+            <span>Ready editors</span>
+          </div>
+          <div class="metric">
+            <strong>{{ workQueue.length }}</strong>
+            <span>Draft queue</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <div class="editor-surface">
+          <div class="section-heading">
+            <div>
+              <span>{{ activeResource.endpoint }}</span>
+              <h3>{{ activeResource.label }} Editor</h3>
+            </div>
+            <span class="pill">{{ activeResource.status }}</span>
+          </div>
+
+          <div class="resource-summary">
+            <p>{{ activeResource.summary }}</p>
+          </div>
+
+          <div class="resource-editor-toolbar">
+            <label *ngIf="requiresAreaFilter()" class="area-filter angular-area-filter">
+              Area
+              <select
+                [ngModel]="selectedResourceAreaId"
+                (ngModelChange)="onAreaFilterChange($event)"
+                name="selectedResourceAreaId"
+              >
+                <option value="">Select area</option>
+                <option *ngFor="let area of areas" [ngValue]="area.id ?? ''">
+                  {{ area.vnum ? area.vnum + ' - ' + area.name : area.name || area.id }}
+                </option>
+              </select>
+            </label>
+            <div class="area-toolbar-actions">
+              <button
+                class="secondary-button"
+                type="button"
+                (click)="loadActiveDocuments()"
+                [disabled]="resourceStatus === 'loading'"
+              >
+                {{ resourceStatus === 'loading' ? 'Loading' : 'Reload' }}
+              </button>
+              <button class="primary-button" type="button" (click)="createNewResource()">
+                New {{ activeResource.label }}
+              </button>
+            </div>
+          </div>
+
+          <div class="resource-json-workspace">
+            <aside class="area-list" aria-label="Loaded resources">
+              <div class="area-list-heading">
+                <strong>{{ activeResource.label }}</strong>
+                <span>{{ resourceDocuments.length }}</span>
+              </div>
+              <button
+                class="area-list-item"
+                type="button"
+                [class.active]="selectedResourceId === 'new'"
+                (click)="createNewResource()"
+              >
+                <strong>New document</strong>
+                <span>Draft JSON payload</span>
+              </button>
+              <button
+                *ngFor="let document of resourceDocuments"
+                class="area-list-item"
+                type="button"
+                [class.active]="selectedResourceId === document.id"
+                (click)="selectResource(document.id ?? 'new')"
+              >
+                <strong>{{ resourceLabel(document) }}</strong>
+                <span>{{ resourceSecondaryLabel(document) }}</span>
+              </button>
+            </aside>
+
+            <div class="structured-resource-editor">
+              <som-resource-form
+                [draft]="resourceDraft"
+                [fieldNames]="structuredFieldNames"
+                (draftChange)="updateResourceDraft($event)"
+              ></som-resource-form>
+              <som-guard-list
+                *ngIf="usesGuardCards()"
+                [guards]="resourceDraft['guards']"
+                (guardsChange)="updateResourceGuards($event)"
+              ></som-guard-list>
+            </div>
+
+            <label class="json-editor-field raw-json-field">
+              <span>Raw JSON Payload</span>
+              <textarea
+                [(ngModel)]="resourceDraftText"
+                name="resourceDraftText"
+                spellcheck="false"
+                rows="12"
+              ></textarea>
+            </label>
+          </div>
+
+          <div class="field-list">
+            <span *ngFor="let field of activeResource.fields">{{ field }}</span>
+          </div>
+
+          <div class="editor-actions">
+            <span class="area-message">{{ resourceMessage }}</span>
+            <button
+              class="primary-button"
+              type="button"
+              (click)="saveActiveDocument()"
+              [disabled]="resourceStatus === 'saving'"
+            >
+              {{ resourceStatus === 'saving' ? 'Saving' : 'Save Document' }}
+            </button>
+          </div>
+        </div>
+
+        <aside class="inspector">
+          <div class="section-heading compact">
+            <div>
+              <span>Request Preview</span>
+              <h3>Java API Contract</h3>
+            </div>
+          </div>
+          <pre>{{ createRequest | json }}</pre>
+        </aside>
+      </section>
+
+      <section class="queue-band">
+        <div class="section-heading">
+          <div>
+            <span>Authoring Flow</span>
+            <h3>Draft Queue</h3>
+          </div>
+        </div>
+        <div class="queue-table">
+          <div class="queue-row" *ngFor="let item of workQueue">
+            <span aria-hidden="true">OK</span>
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.area }}</span>
+            <span>{{ item.owner }}</span>
+            <span class="pill muted">{{ item.status }}</span>
+          </div>
+        </div>
+      </section>
+    </ng-template>
+  </main>
+</div>

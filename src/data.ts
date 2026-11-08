@@ -1,5 +1,5 @@
-import type { ApiResource, DesignerDraft, WorkQueueItem } from "./domain/types";
-import { resourceIcons } from "./domain/types";
+import type { ApiResource, DesignerDraft, WorkQueueItem } from "./types/common";
+import { resourceIcons } from "./types/icons";
 
 export const apiResources: ApiResource[] = [
   {

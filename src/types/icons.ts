@@ -1,0 +1,40 @@
+import type { FeatureKind } from "./common";
+
+export const iconByKind: Record<FeatureKind, string> = {
+  skills: "swords",
+  spells: "sparkles",
+  settings: "settings",
+  game: "gamepad",
+  areas: "castle",
+  rooms: "book",
+  mobiles: "bot",
+  items: "boxes",
+  shops: "boxes",
+  resets: "flame",
+  specials: "scroll",
+  classes: "graduation",
+  races: "users",
+  commands: "scroll",
+  helps: "help",
+  socials: "message",
+  notes: "notebook",
+  communication: "message",
+};
+
+export const resourceIcons = {
+  BookOpen: iconByKind.rooms,
+  Bot: iconByKind.mobiles,
+  Boxes: iconByKind.items,
+  Castle: iconByKind.areas,
+  CircleHelp: iconByKind.helps,
+  FlameKindling: iconByKind.resets,
+  Gamepad2: iconByKind.game,
+  GraduationCap: iconByKind.classes,
+  MessageSquareText: iconByKind.communication,
+  NotebookText: iconByKind.notes,
+  ScrollText: iconByKind.commands,
+  Settings2: iconByKind.settings,
+  Sparkles: iconByKind.spells,
+  Swords: iconByKind.skills,
+  UsersRound: iconByKind.races,
+};
