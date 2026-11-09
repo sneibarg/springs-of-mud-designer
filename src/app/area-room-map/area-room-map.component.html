@@ -1,0 +1,108 @@
+<section #mapRoot class="area-map" aria-label="Area map">
+  <header class="map-heading">
+    <div>
+      <span class="map-kicker">Rooms / Area map</span>
+      <h4>{{ areaName || 'Area map' }}</h4>
+    </div>
+    @if (draft) { <span class="pill muted">Unsaved room preview</span> }
+  </header>
+
+  @if (loading) { <p class="map-message" role="status">Loading rooms…</p> }
+  @if (loadError) { <p class="map-message field-error" role="alert">{{ loadError }} Use Reload to try again.</p> }
+  @if (draftInvalid) { <p class="map-message" role="status">Showing the last valid room data. Open Editor to correct the room JSON.</p> }
+
+  @if (selectedRoom; as room) {
+    <div class="map-toolbar">
+      <label>Room
+        <select #roomSelect [value]="room.id" (change)="selectRoom(roomSelect.value)">
+          @for (option of roomOptions; track option.id) {
+            <option [value]="option.id">{{ option.vnum }} · {{ option.name }}</option>
+          }
+        </select>
+      </label>
+      @if (floors.length > 1) {
+        <label>Level
+          <select #floorSelect [value]="floor" (change)="selectFloor(floorSelect.value)">
+            @for (level of floors; track level) { <option [value]="level">{{ floorLabel(level) }}</option> }
+          </select>
+        </label>
+      }
+      <div class="map-actions">
+        <button type="button" class="secondary-button" [attr.aria-pressed]="showAll" (click)="toggleAllRooms()">Show all rooms</button>
+        <button type="button" class="secondary-button" (click)="fitView()">Fit view</button>
+        <div class="map-zoom" role="group" aria-label="Zoom">
+          <button type="button" class="secondary-button" aria-label="Zoom out" (click)="changeZoom(0.8)">−</button>
+          <button type="button" class="secondary-button" aria-label="Zoom in" (click)="changeZoom(1.25)">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="map-layout">
+      <div #viewport class="map-viewport" [class.dragging]="drag" tabindex="0" role="region"
+        aria-label="Room map. Use arrow keys to pan."
+        (pointerdown)="startPan($event)" (pointermove)="movePan($event)" (pointerup)="stopPan($event)"
+        (pointercancel)="stopPan($event)" (lostpointercapture)="stopPan($event)" (keydown)="panByKey($event)">
+        <span class="map-compass" aria-label="North is up">↑ N</span>
+        <div class="map-plane" [class.compact]="zoom < .56" [class.distant]="zoom < .26" [style.--map-zoom]="zoom"
+          [style.transform]="'translate3d(' + panX + 'px,' + panY + 'px,0) scale(' + zoom + ')'">
+          <svg class="map-links" width="1" height="1" aria-hidden="true">
+            <defs>
+              <marker id="room-map-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto-start-reverse">
+                <path d="M 1 1 L 6 3.5 L 1 6" />
+              </marker>
+            </defs>
+            @for (link of links; track link.key) {
+              <path [attr.d]="link.path" [class.exit-stub]="link.stub"
+                [attr.marker-start]="link.twoWay ? 'url(#room-map-arrow)' : null" marker-end="url(#room-map-arrow)" />
+            }
+          </svg>
+          @for (node of shownRooms; track node.id) {
+            <button type="button" class="room-node" [attr.aria-pressed]="node.id === room.id"
+              [attr.tabindex]="node.id === room.id ? 0 : -1"
+              [attr.aria-label]="node.name + ', room ' + node.vnum" [title]="node.name"
+              [style.left.px]="nodeX(node.id) - tile.width / 2" [style.top.px]="nodeY(node.id) - tile.height / 2"
+              [style.width.px]="tile.width" [style.height.px]="tile.height" (click)="selectRoom(node.id)">
+              <strong>{{ node.vnum || '—' }}</strong>
+              <span>{{ node.name }}</span>
+            </button>
+          }
+        </div>
+      </div>
+      <aside class="map-room-details" aria-label="Selected room">
+        <span class="map-kicker">Selected room</span>
+        <h5>{{ room.name }}</h5>
+        <span class="map-muted">Vnum {{ room.vnum || 'unassigned' }}</span>
+        <button class="secondary-button" type="button" [disabled]="saving || loading" (click)="editRoom.emit(room.id)">Edit room</button>
+        <ul class="map-exits" aria-label="Exits">
+          @for (exit of room.exits; track $index) {
+            <li>
+              @if (exit.targetId && graph.get(exit.targetId); as target) {
+                <button type="button" class="map-exit" (click)="selectRoom(target.id, true)">
+                  <strong>{{ exit.direction }}</strong>
+                  <span>{{ target.vnum }} · {{ target.name }}</span>
+                </button>
+              } @else {
+                <div class="map-exit-note">
+                  <strong>{{ exit.direction || 'Exit ' + ($index + 1) }}</strong>
+                  @if (exit.destination) { <span>{{ exit.destination }}</span> }
+                  <span>{{ exit.problem }}</span>
+                </div>
+              }
+            </li>
+          } @empty {
+            <li class="map-muted">No exits from this room.</li>
+          }
+        </ul>
+      </aside>
+    </div>
+
+    <footer class="map-footer map-muted">
+      <span role="status">{{ shownRooms.length }} shown · {{ roomOptions.length }} rooms in area</span>
+      <span>Arrowheads show travel direction. Dashed lines mark exits beyond this view.</span>
+    </footer>
+  } @else if (!areaId) {
+    <p class="map-message">Select an area to see its map.</p>
+  } @else if (!loading && !loadError) {
+    <p class="map-message">No mappable rooms are loaded for this area.</p>
+  }
+</section>

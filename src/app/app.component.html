@@ -209,6 +209,14 @@
               </select>
             </label>
             <div class="area-toolbar-actions">
+              @if (activeKind === 'rooms') {
+                <div class="room-view-options" role="group" aria-label="Rooms view">
+                  <button #roomEditorTab type="button" class="secondary-button" [attr.aria-pressed]="!roomMapVisible"
+                    (click)="roomMapVisible = false">Editor</button>
+                  <button type="button" class="secondary-button" [attr.aria-pressed]="roomMapVisible"
+                    (click)="openRoomMap()">Map</button>
+                </div>
+              }
               <button
                 class="secondary-button"
                 type="button"
@@ -223,6 +231,14 @@
             </div>
           </div>
 
+          @if (activeKind === 'rooms' && roomMapOpened) {
+            <som-area-room-map [hidden]="!roomMapVisible" [areaId]="selectedResourceAreaId" [areaName]="roomMapAreaName"
+              [rooms]="resourceDocuments" [initialRoomId]="selectedResourceId" [draft]="roomMapDraft"
+              [draftInvalid]="fieldJsonInvalid || !!rawJsonError" [loading]="resourceStatus === 'loading'"
+              [saving]="resourceStatus === 'saving'" [loadError]="roomMapLoadError" (editRoom)="editRoomFromMap($event)" />
+          }
+
+          <div [hidden]="roomMapVisible">
           <div class="resource-json-workspace">
             <aside class="area-list" aria-label="Loaded resources">
               <div class="area-list-heading">
@@ -323,6 +339,7 @@
               {{ activeKind === 'game' ? 'Save unavailable' : resourceStatus === 'saving' ? 'Saving' : 'Save Document' }}
             </button>
           </div>
+          </div>
         </div>
 
         @if (activeKind === 'game') {
@@ -337,7 +354,7 @@
             }
           </details>
         } @else {
-        <aside class="inspector">
+        <aside class="inspector" [hidden]="roomMapVisible">
           <div class="section-heading compact">
             <div>
               <span>Request Preview</span>

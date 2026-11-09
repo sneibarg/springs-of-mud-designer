@@ -3,6 +3,7 @@ import { ChangeDetectorRef, Component, ElementRef, HostListener, OnInit, ViewChi
 import { FormsModule } from "@angular/forms";
 import { SomApiService } from "./api.service";
 import { GuardListComponent } from "./guard-list.component";
+import { AreaRoomMapComponent } from "./area-room-map/area-room-map.component";
 import { LambdaListComponent } from "./lambda-list.component";
 import { ResourceFormComponent, type ResourceFormDocument } from "./resource-form.component";
 import { JsonPayloadEditorComponent } from "./json-payload-editor/json-payload-editor.component";
@@ -64,7 +65,7 @@ type ResourceStatus = "idle" | "loading" | "saving";
 @Component({
   selector: "som-root",
   standalone: true,
-  imports: [CommonModule, FormsModule, GuardListComponent, LambdaListComponent, ResourceFormComponent, JsonPayloadEditorComponent],
+  imports: [CommonModule, FormsModule, GuardListComponent, LambdaListComponent, ResourceFormComponent, JsonPayloadEditorComponent, AreaRoomMapComponent],
   templateUrl: "./app.component.html",
 })
 export class AppComponent implements OnInit {
@@ -93,6 +94,9 @@ export class AppComponent implements OnInit {
   gamePreviewExpanded = false;
   areasNavExpanded = true;
   abilitiesNavExpanded = true;
+  roomMapVisible = false;
+  roomMapOpened = false;
+  roomMapLoadError = "";
 
   activeKind: FeatureKind = "spells";
   apiBaseUrl = readSavedApiBaseUrl();
@@ -122,6 +126,7 @@ export class AppComponent implements OnInit {
   private saving = false;
   private serverIdentity = buildApiUrl(this.apiBaseUrl, this.useDevProxy, "");
   @ViewChild("unsavedDialog") private unsavedDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild("roomEditorTab") private roomEditorTab?: ElementRef<HTMLButtonElement>;
   private pendingDraftDecision?: (discard: boolean) => void;
   selectedResourceId = "new";
   selectedResourceAreaId = "";
@@ -158,6 +163,29 @@ export class AppComponent implements OnInit {
     const query = this.searchQuery.trim().toLocaleLowerCase();
     return query ? this.resourceDocuments.filter((document) =>
       JSON.stringify(document).toLocaleLowerCase().includes(query)) : this.resourceDocuments;
+  }
+
+  get roomMapAreaName(): string {
+    return this.areas.find((area) => area.id === this.selectedResourceAreaId)?.name ?? "";
+  }
+
+  get roomMapDraft(): ResourceDocument | undefined {
+    return this.selectedResourceId !== "new" && this.isDirty && this.resourceDraft.areaId === this.selectedResourceAreaId
+      ? this.resourceDraft : undefined;
+  }
+
+  openRoomMap(): void {
+    this.roomMapOpened = true;
+    this.roomMapVisible = true;
+  }
+
+  async editRoomFromMap(id: string): Promise<void> {
+    await this.selectResource(id);
+    if (this.activeKind === "rooms" && this.selectedResourceId === id) {
+      this.roomMapVisible = false;
+      this.changeDetector.markForCheck();
+      this.roomEditorTab?.nativeElement.focus();
+    }
   }
 
   @HostListener("window:beforeunload", ["$event"])
@@ -369,6 +397,7 @@ export class AppComponent implements OnInit {
   async loadActiveDocuments(confirmDiscard = true): Promise<void> {
     if (confirmDiscard && !await this.canReplaceDraft()) return;
     const resource = this.activeResource;
+    if (resource.kind === "rooms") this.roomMapLoadError = "";
     const endpoint = this.buildListEndpoint(resource);
     const workspace = this.workspaceVersion;
     const request = ++this.loadVersion;
@@ -396,6 +425,7 @@ export class AppComponent implements OnInit {
     } catch (error) {
       if (!isCurrent()) return;
       this.resourceMessage = "Could not load " + resource.label.toLowerCase() + ": " + (error instanceof Error ? error.message : "Request failed.");
+      if (resource.kind === "rooms") this.roomMapLoadError = this.resourceMessage;
     } finally {
       if (isCurrent()) {
         this.loading = false;
@@ -425,6 +455,7 @@ export class AppComponent implements OnInit {
     if (!await this.canReplaceDraft()) return;
     this.invalidateWorkspace();
     this.replaceDraft(this.newDraftForArea());
+    this.roomMapVisible = false;
     this.changeDetector.markForCheck();
   }
 
@@ -553,6 +584,9 @@ export class AppComponent implements OnInit {
   }
 
   private resetResourceWorkspace(): void {
+    this.roomMapVisible = false;
+    this.roomMapOpened = false;
+    this.roomMapLoadError = "";
     this.resourceDocuments = [];
     this.replaceDraft(this.newDraftForArea());
     this.resourceMessage = "";

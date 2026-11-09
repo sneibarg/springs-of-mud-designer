@@ -862,6 +862,19 @@ button:disabled {
   min-width: 0;
 }
 
+.room-view-options {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.room-view-options button[aria-pressed="true"] {
+  color: #fff;
+  background: #2f6f55;
+  border-color: #2f6f55;
+}
+
+.inspector[hidden] { display: none; }
+
 .ability-editor-sections {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

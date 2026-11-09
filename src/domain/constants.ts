@@ -62,7 +62,7 @@ export const emptyRoomDraft: RoomView = {
 
 export const roomNumberFields = ["spawnTimer", "spawnTime", "teleDelay", "roomFlags", "sectorType"] as const;
 
-export const directionNames = ["north", "east", "south", "west", "up", "down"];
+export const directionNames = ["north", "east", "south", "west", "up", "down"] as const;
 export const editableResourceKinds: FeatureKind[] = ["items", "shops", "resets", "specials"];
 export const topLevelEditableResourceKinds: FeatureKind[] = [
   "classes",

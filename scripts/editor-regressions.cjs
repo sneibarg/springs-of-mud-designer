@@ -31,6 +31,8 @@ const { AppComponent } = load('src/app/app.component.ts');
 const { ResourceFormComponent } = load('src/app/resource-form.component.ts');
 const { GuardListComponent } = load('src/app/guard-list.component.ts');
 const { LambdaListComponent } = load('src/app/lambda-list.component.ts');
+const { buildRoomMap, layoutRoomMap } = load('src/domain/room-map.ts');
+const { AreaRoomMapComponent } = load('src/app/area-room-map/area-room-map.component.ts');
 function deferred() { let resolve, reject; const promise = new Promise((a,b) => {resolve=a;reject=b;});return {promise,resolve,reject}; }
 function appWith(api = {}) {
   const app = new AppComponent({ list: async () => [], getAreas: async () => [], ...api }, { markForCheck() {} });
@@ -42,6 +44,87 @@ async function discard(app, action) {
   app.finishDraftDecision(true);
   await pending;
 }
+
+test('Area map: resolves exits without guessing at ambiguous, missing or conflicting destinations', () => {
+  const rooms = buildRoomMap([
+    { id: 'a', vnum: '100', areaId: 'town', exits: [
+      '{"direction":0,"to_room_id":"b","to_room_vnum":100}',
+      "{'direction': 1, 'to_room_id': None, 'to_room_vnum': 101}",
+      '{"direction":2,"to_room_vnum":102}',
+      '{"direction":3,"to_room_id":"elsewhere","to_room_vnum":101}',
+      '{"direction":4}', 'null', '[]', '{broken',
+    ] },
+    { id: 'b', vnum: '101' },
+    { id: 'c', vnum: '102' },
+    { id: 'd', vnum: '102' },
+  ]);
+  assert.deepEqual(rooms.get('a').exits.map(exit => exit.targetId ?? exit.problem), [
+    'b', 'b', 'Ambiguous destination', 'Outside loaded rooms', 'Missing destination',
+    'Invalid exit', 'Invalid exit', 'Invalid exit',
+  ]);
+});
+
+test('Area map: directional placement handles cycles, collisions, floors and disconnected rooms', () => {
+  const exit = (direction, to_room_id) => JSON.stringify({ direction, to_room_id });
+  const room = (id, exits = []) => ({ id, name: id, vnum: id, areaId: 'town', exits });
+  const records = [
+    room('a', [exit(0, 'b'), exit(1, 'c'), exit(1, 'd'), exit(4, 'upstairs')]),
+    room('b', [exit(2, 'a'), exit(1, 'c')]),
+    room('c', [exit(3, 'a')]),
+    room('d'), room('upstairs', [exit(5, 'a')]), room('isolated'),
+  ];
+  const graph = buildRoomMap(records);
+  const positions = layoutRoomMap(graph, 'a');
+  assert.deepEqual(positions.get('a'), { x: 0, y: 0, floor: 0 });
+  assert.deepEqual(positions.get('b'), { x: 0, y: -1, floor: 0 });
+  assert.deepEqual(positions.get('upstairs'), { x: 0, y: 0, floor: 1 });
+  assert.ok(positions.get('isolated').x > positions.get('c').x);
+  assert.equal(new Set([...positions.values()].map(p => JSON.stringify(p))).size, records.length);
+
+  const map = new AreaRoomMapComponent();
+  Object.assign(map, { areaId: 'town', rooms: records, initialRoomId: 'a' });
+  map.ngOnChanges({ areaId: {}, rooms: {}, initialRoomId: {} });
+  assert.deepEqual(map.shownRooms.map(r => r.id), ['a', 'b', 'c', 'd']);
+  assert.equal(map.links.filter(link => link.twoWay).length, 2);
+  assert.ok(map.links.some(link => !link.twoWay && !link.stub));
+  map.selectRoom('upstairs');
+  assert.equal(map.floor, 1);
+  assert.deepEqual(map.shownRooms.map(r => r.id), ['upstairs']);
+  map.selectRoom('a');
+  map.toggleAllRooms();
+  assert.ok(map.shownRooms.some(r => r.id === 'isolated'));
+
+  const previous = map.positions;
+  map.draft = room('a', [exit(2, 'b')]);
+  map.ngOnChanges({ draft: {} });
+  assert.deepEqual(map.positions, previous);
+  assert.equal(map.graph.get('a').exits[0].direction, 'south');
+  assert.equal(buildRoomMap(records).get('a').exits[0].direction, 'north');
+});
+
+test('Area map: switching views preserves drafts and editing another room respects Stay', async () => {
+  const app = appWith();
+  app.activeKind = 'rooms';
+  app.selectedResourceAreaId = 'town';
+  app.resourceDocuments = [
+    { id: 'a', name: 'Gate', vnum: '100', areaId: 'town', exits: [] },
+    { id: 'b', name: 'Path', vnum: '101', areaId: 'town', exits: [] },
+  ];
+  await app.selectResource('a');
+  app.updateResourceDraft({ ...app.resourceDraft, name: 'Renamed gate' });
+  const identity = app.editorIdentity;
+  app.openRoomMap();
+  assert.equal(app.roomMapDraft.name, 'Renamed gate');
+  assert.equal(app.editorIdentity, identity);
+  const pending = app.editRoomFromMap('b');
+  app.finishDraftDecision(false);
+  await pending;
+  assert.equal(app.roomMapVisible, true);
+  assert.equal(app.resourceDraft.name, 'Renamed gate');
+  await discard(app, () => app.editRoomFromMap('b'));
+  assert.equal(app.roomMapVisible, false);
+  assert.equal(app.selectedResourceId, 'b');
+});
 test('UX-001: Stay protects drafts; same selection is a no-op; Discard continues', async () => {
   const app = appWith();
   app.updateRawJson('{"name":"keep"}');
