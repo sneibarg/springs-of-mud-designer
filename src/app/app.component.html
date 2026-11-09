@@ -179,7 +179,7 @@
         </div>
       </section>
 
-      <section class="content-grid" [class.payload-workspace]="usesJsonPayloadEditor()">
+      <section class="content-grid" [class.payload-workspace]="usesJsonPayloadEditor() || jsonEditorFields.length > 0">
         <div class="editor-surface">
           <div class="section-heading">
             <div>
@@ -271,11 +271,21 @@
                 (invalidJsonChange)="updateFieldValidity($event)"
                 (draftChange)="updateResourceDraft($event)"
               ></som-resource-form>
-              <som-guard-list
-                *ngIf="usesGuardCards()"
-                [guards]="resourceDraft['guards']"
-                (guardsChange)="updateResourceGuards($event)"
-              ></som-guard-list>
+              <div [class.ability-editor-sections]="jsonEditorFields.length > 0">
+                @for (field of jsonEditorFields; track field.key) {
+                  <som-json-payload-editor #fieldEditor [label]="field.label" [value]="jsonFieldValue(field.key)"
+                    [documentKey]="editorIdentity" [requireObject]="true" [rules]="field.rules"
+                    [readonly]="!!rawJsonError || resourceStatus === 'saving'"
+                    (stateChange)="updateJsonField(field.key, $event, fieldEditor.documentKey)" />
+                }
+                <som-guard-list *ngIf="usesGuardCards()" [guards]="resourceDraft['guards']"
+                  (guardsChange)="updateResourceGuards($event)" />
+                @if (activeKind === 'commands') {
+                  <som-lambda-list [lambdas]="resourceDraft['lambdas']"
+                    [readonly]="!!rawJsonError || resourceStatus === 'saving'"
+                    (lambdasChange)="updateResourceDraft({ ...resourceDraft, lambdas: $event })" />
+                }
+              </div>
             </fieldset>
 
             <label *ngIf="!usesJsonPayloadEditor()" class="json-editor-field raw-json-field">
@@ -334,7 +344,9 @@
               <h3>Current Save Operation</h3>
             </div>
           </div>
-          <pre>{{ createRequest | json }}</pre>
+          <pre [class.ability-request-preview]="jsonEditorFields.length > 0"
+            [attr.tabindex]="jsonEditorFields.length > 0 ? 0 : null"
+            [attr.aria-label]="jsonEditorFields.length > 0 ? activeResource.label + ' save request' : null">{{ createRequest | json }}</pre>
         </aside>
         }
       </section>

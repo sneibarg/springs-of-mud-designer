@@ -25,7 +25,8 @@
     </div>
   }
   @if (mode === 'form' && root) {
-    <som-json-value-editor [node]="root" [label]="label" [options]="options" [showTools]="showTools" [readonly]="readonly || hasIncomingValue" (edited)="edited()" />
+    <som-json-value-editor [node]="root" [label]="label" [options]="options" [rule]="rules['']"
+      [showTools]="showTools" [readonly]="readonly || hasIncomingValue" (edited)="edited()" />
   }
   @if (mode === 'json') {
     <label class="payload-raw" [for]="editorId + '-raw'">{{ label }} JSON</label>

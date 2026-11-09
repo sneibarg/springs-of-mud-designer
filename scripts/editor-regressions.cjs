@@ -30,6 +30,7 @@ global.window = { localStorage: { getItem: () => null } };
 const { AppComponent } = load('src/app/app.component.ts');
 const { ResourceFormComponent } = load('src/app/resource-form.component.ts');
 const { GuardListComponent } = load('src/app/guard-list.component.ts');
+const { LambdaListComponent } = load('src/app/lambda-list.component.ts');
 function deferred() { let resolve, reject; const promise = new Promise((a,b) => {resolve=a;reject=b;});return {promise,resolve,reject}; }
 function appWith(api = {}) {
   const app = new AppComponent({ list: async () => [], getAreas: async () => [], ...api }, { markForCheck() {} });
@@ -228,6 +229,120 @@ async function payloadEditor(value, options = {}) {
   await Promise.resolve();
   return editor;
 }
+
+test('Commands: payload and other field errors independently block saving and preserve input', async () => {
+  const app = appWith();
+  await app.setActiveKind('commands');
+  const raw = '{ "name": "test", "payload": null, "lambdas": ["lambda ctx: True"] }';
+  app.updateRawJson(raw);
+  const key = app.editorIdentity;
+  const editor = await payloadEditor(app.jsonFieldValue('payload'), { documentKey: key, requireObject: true });
+  editor.stateChange.listener = state => app.updateJsonField('payload', state, key);
+  app.updateJsonField('payload', editor.stateChange.last, key);
+  assert.equal(app.resourceDraftText, raw);
+  assert.equal(app.resourceDraft.payload, null);
+
+  editor.switchMode('json');
+  editor.editRaw('[]');
+  app.updateFieldValidity(true);
+  app.updateFieldValidity(false);
+  assert.equal(app.saveBlocked, true);
+  assert.equal(editor.rawText, '[]');
+  assert.equal(app.resourceDraft.payload, null);
+
+  app.updateFieldValidity(true);
+  editor.editRaw('{"nested":[false,null,2]}');
+  assert.equal(app.saveBlocked, true);
+  app.updateFieldValidity(false);
+  assert.equal(app.saveBlocked, false);
+  assert.deepEqual(app.createRequest.body.payload, { nested: [false, null, 2] });
+  assert.deepEqual(app.createRequest.body.lambdas, ['lambda ctx: True']);
+
+  app.updateRawJson('{"name":"test","lambdas":[{}]}');
+  assert.match(app.rawJsonError, /\/lambdas\/0/);
+  assert.equal(app.saveBlocked, true);
+  app.updateRawJson('{"name":"test","payload":{"replacement":true}}');
+  app.updateJsonField('payload', editor.stateChange.last, key);
+  assert.deepEqual(app.resourceDraft.payload, { replacement: true });
+});
+
+test('Skills: each scoped editor keeps its own validation state and preserves the other fields', async () => {
+  const app = appWith();
+  await app.setActiveKind('skills');
+  app.updateRawJson(JSON.stringify({
+    name: 'bash',
+    ratingByClass: { warrior: 2 },
+    levelByClass: { warrior: 10 },
+    fightPlan: { steps: [{ enabled: true, weight: 0.5 }] },
+    payload: null,
+    guards: [{ predicate: 'lambda ctx: True' }],
+  }));
+  const key = app.editorIdentity;
+  const editors = {};
+  for (const field of app.jsonEditorFields) {
+    assert.equal(app.structuredFieldNames.includes(field.key), false);
+    const editor = await payloadEditor(app.jsonFieldValue(field.key), {
+      documentKey: key, requireObject: true, rules: field.rules,
+    });
+    editor.stateChange.listener = state => app.updateJsonField(field.key, state, key);
+    app.updateJsonField(field.key, editor.stateChange.last, key);
+    editor.switchMode('json');
+    editors[field.key] = editor;
+  }
+  assert.deepEqual(Object.keys(editors), ['ratingByClass', 'levelByClass', 'fightPlan', 'payload']);
+  assert.equal(app.resourceDraft.payload, null);
+
+  editors.ratingByClass.editRaw('{"warrior":1.5}');
+  editors.levelByClass.editRaw('{"warrior":"12"}');
+  editors.payload.editRaw('{"args":[false,null,3]}');
+  assert.equal(app.saveBlocked, true);
+  editors.ratingByClass.editRaw('{"warrior":3}');
+  assert.equal(app.saveBlocked, true);
+  assert.equal(editors.levelByClass.rawText, '{"warrior":"12"}');
+  editors.levelByClass.editRaw('{"warrior":12}');
+  assert.equal(app.saveBlocked, false);
+  assert.deepEqual(app.createRequest.body.ratingByClass, { warrior: 3 });
+  assert.deepEqual(app.createRequest.body.levelByClass, { warrior: 12 });
+  assert.deepEqual(app.createRequest.body.payload, { args: [false, null, 3] });
+  assert.deepEqual(app.createRequest.body.fightPlan, { steps: [{ enabled: true, weight: 0.5 }] });
+  assert.deepEqual(app.createRequest.body.guards, [{ predicate: 'lambda ctx: True' }]);
+
+  app.updateRawJson('{"name":"bash","levelByClass":{"warrior":12.5}}');
+  assert.match(app.rawJsonError, /\/levelByClass\/warrior.*whole number/);
+  assert.equal(app.saveBlocked, true);
+});
+
+test('Commands: ordered lambda cards preserve source and row identity across draft echoes', () => {
+  const list = new LambdaListComponent({ nativeElement: { querySelector: () => null, querySelectorAll: () => [] } });
+  const original = ['lambda ctx: True', 'lambda ctx: True'];
+  list.lambdas = original;
+  list.ngOnChanges({ lambdas: {} });
+  list.lambdasChange.listener = lambdas => {
+    list.lambdas = lambdas;
+    list.ngOnChanges({ lambdas: {} });
+  };
+  const first = list.rows[0];
+  const source = 'lambda ctx: (\n    ctx.actor\n)  ';
+  list.updateSource(first, source);
+  list.move(first, 1);
+  assert.equal(list.rows[1], first);
+  assert.deepEqual(list.lambdas, [original[1], source]);
+  list.startDrag({ dataTransfer: { setData() {} } }, first);
+  list.drop({ preventDefault() {} }, 0);
+  assert.equal(list.rows[0], first);
+  assert.deepEqual(list.lambdas, [source, original[1]]);
+  list.add();
+  list.remove(1);
+  assert.deepEqual(list.lambdas, [source, '']);
+  assert.equal(original[0], 'lambda ctx: True');
+  list.lambdas = ['lambda ctx: None'];
+  list.ngOnChanges({ lambdas: {} });
+  assert.deepEqual(list.rows.map(row => row.source), ['lambda ctx: None']);
+  list.lambdas = undefined;
+  list.ngOnChanges({ lambdas: {} });
+  assert.equal(list.rows.length, 0);
+});
+
 function valueEditor(node, options = {}) {
   const view = new JsonValueEditorComponent({ nativeElement: { querySelector: () => null } });
   Object.assign(view, { node }, options);

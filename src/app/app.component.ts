@@ -3,12 +3,14 @@ import { ChangeDetectorRef, Component, ElementRef, HostListener, OnInit, ViewChi
 import { FormsModule } from "@angular/forms";
 import { SomApiService } from "./api.service";
 import { GuardListComponent } from "./guard-list.component";
+import { LambdaListComponent } from "./lambda-list.component";
 import { ResourceFormComponent, type ResourceFormDocument } from "./resource-form.component";
 import { JsonPayloadEditorComponent } from "./json-payload-editor/json-payload-editor.component";
 import { itemEditorRules } from "../domain/item-editor";
 import { gameEditorRules } from "../domain/game-editor";
+import { commandJsonFields, commandJsonRules, skillJsonFields, skillJsonRules } from "../domain/ability-editor";
 import { mobileEditorRules, roomEditorRules, specialEditorRules } from "../domain/world-resource-editor";
-import type { JsonEditorRules, JsonEditorState } from "../domain/json-editor";
+import { isJsonValue, validateJsonValue, type JsonEditorRules, type JsonEditorState } from "../domain/json-editor";
 import { apiResources, workQueue } from "../data";
 import {
   buildApiUrl,
@@ -62,7 +64,7 @@ type ResourceStatus = "idle" | "loading" | "saving";
 @Component({
   selector: "som-root",
   standalone: true,
-  imports: [CommonModule, FormsModule, GuardListComponent, ResourceFormComponent, JsonPayloadEditorComponent],
+  imports: [CommonModule, FormsModule, GuardListComponent, LambdaListComponent, ResourceFormComponent, JsonPayloadEditorComponent],
   templateUrl: "./app.component.html",
 })
 export class AppComponent implements OnInit {
@@ -107,7 +109,9 @@ export class AppComponent implements OnInit {
   resourceDraftText = this.toPrettyJson(this.resourceDraft);
   resourceMessage = "";
   rawJsonError = "";
-  fieldJsonInvalid = false;
+  private structuredFieldInvalid = false;
+  private readonly invalidJsonFields = new Set<string>();
+  private readonly emptyJsonField = {};
   searchQuery = "";
   editorIdentity = 0;
   private baseline = this.resourceDraftText;
@@ -130,6 +134,20 @@ export class AppComponent implements OnInit {
 
   get isDirty(): boolean {
     return this.fieldJsonInvalid || this.resourceDraftText !== this.baseline;
+  }
+
+  get fieldJsonInvalid(): boolean {
+    return this.structuredFieldInvalid || this.invalidJsonFields.size > 0;
+  }
+
+  get jsonEditorFields() {
+    if (this.activeKind === "skills") return skillJsonFields;
+    if (this.activeKind === "commands") return commandJsonFields;
+    return [];
+  }
+
+  jsonFieldValue(key: string): unknown {
+    return this.resourceDraft[key] ?? this.emptyJsonField;
   }
 
   get saveBlocked(): boolean {
@@ -183,7 +201,8 @@ export class AppComponent implements OnInit {
     this.baseline = this.resourceDraftText;
     this.selectedResourceId = selectedId;
     this.rawJsonError = "";
-    this.fieldJsonInvalid = false;
+    this.structuredFieldInvalid = false;
+    this.invalidJsonFields.clear();
     this.editorIdentity++;
     this.draftRevision++;
   }
@@ -202,16 +221,16 @@ export class AppComponent implements OnInit {
   }
 
   updateFieldValidity(invalid: boolean): void {
-    this.fieldJsonInvalid = invalid;
+    this.structuredFieldInvalid = invalid;
     this.draftRevision++;
   }
 
   updatePayloadEditor(state: JsonEditorState, documentKey: string | number = this.editorIdentity): void {
     if (!this.usesJsonPayloadEditor() || documentKey !== this.editorIdentity) return;
-    this.fieldJsonInvalid = state.status === "invalid";
+    this.structuredFieldInvalid = state.status === "invalid";
     if (state.status === "valid") {
       if (!state.value || typeof state.value !== "object" || Array.isArray(state.value)) {
-        this.fieldJsonInvalid = true;
+        this.structuredFieldInvalid = true;
         return;
       }
       this.resourceDraft = state.value as ResourceDocument;
@@ -219,6 +238,21 @@ export class AppComponent implements OnInit {
     }
     this.draftRevision++;
     this.changeDetector.markForCheck();
+  }
+
+  updateJsonField(key: string, state: JsonEditorState, documentKey: string | number): void {
+    if (documentKey !== this.editorIdentity || this.rawJsonError || !this.jsonEditorFields.some((field) => field.key === key)) return;
+    const wasInvalid = this.invalidJsonFields.has(key);
+    if (state.status === "invalid") this.invalidJsonFields.add(key);
+    else this.invalidJsonFields.delete(key);
+    if (wasInvalid !== this.invalidJsonFields.has(key)) {
+      this.draftRevision++;
+      this.changeDetector.markForCheck();
+    }
+    // Opening a field preserves null or omitted values and raw text formatting.
+    if (state.status === "valid" && JSON.stringify(state.value) !== JSON.stringify(this.jsonFieldValue(key))) {
+      this.updateResourceDraft({ ...this.resourceDraft, [key]: state.value });
+    }
   }
 
   get activeFieldNames(): string[] {
@@ -234,7 +268,10 @@ export class AppComponent implements OnInit {
   }
 
   get structuredFieldNames(): string[] {
-    return this.usesGuardCards() ? this.activeFieldNames.filter((fieldName) => fieldName !== "guards") : this.activeFieldNames;
+    const excludedFields = this.jsonEditorFields.map(({ key }) => key);
+    if (this.usesGuardCards()) excludedFields.push("guards");
+    if (this.activeKind === "commands") excludedFields.push("lambdas");
+    return this.activeFieldNames.filter((fieldName) => !excludedFields.includes(fieldName));
   }
 
   get activeResource(): ApiResource {
@@ -623,6 +660,12 @@ export class AppComponent implements OnInit {
   private parseDraft(text: string): ResourceDocument {
     const parsed: unknown = JSON.parse(text);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Draft must be a JSON object.");
+    const rules = this.activeKind === "skills" ? skillJsonRules : this.activeKind === "commands" ? commandJsonRules : undefined;
+    if (rules) {
+      if (!isJsonValue(parsed)) throw new Error("Use finite numbers and valid JSON values.");
+      const [issue] = validateJsonValue(parsed, parsed, { rules });
+      if (issue) throw new Error(`${issue.path} — ${issue.message}`);
+    }
     return parsed as ResourceDocument;
   }
 

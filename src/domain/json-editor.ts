@@ -10,6 +10,7 @@ export type JsonFieldRule = {
   type: JsonValueType;
   itemType?: JsonValueType;
   propertyType?: JsonValueType;
+  propertyInteger?: boolean;
   nullable?: boolean;
   integer?: boolean;
   stringFormat?: "json-object";
@@ -171,7 +172,12 @@ export function validateJsonValue(value: EditableValue, baseline: EditableValue,
       });
     } else if (rule.propertyType && entry !== null && typeof entry === "object" && !Array.isArray(entry)) {
       for (const [key, item] of Object.entries(entry)) {
-        if (jsonValueType(item) !== rule.propertyType) issues.push({ path: jsonPointer(path, key), message: `Expected ${rule.propertyType}.` });
+        const propertyPath = jsonPointer(path, key);
+        if (jsonValueType(item) !== rule.propertyType) {
+          issues.push({ path: propertyPath, message: `Expected ${rule.propertyType}.` });
+        } else if (rule.propertyInteger && !Number.isInteger(item)) {
+          issues.push({ path: propertyPath, message: "Enter a whole number." });
+        }
       }
     }
   }

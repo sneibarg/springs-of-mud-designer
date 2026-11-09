@@ -862,6 +862,13 @@ button:disabled {
   min-width: 0;
 }
 
+.ability-editor-sections {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
 .editor-fieldset {
   margin: 0;
   padding: 0;
@@ -1587,6 +1594,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: #16251d;
   border-radius: 8px;
   font-size: 13px;
+}
+
+.inspector pre.ability-request-preview {
+  min-height: 0;
+  max-height: 360px;
 }
 
 .queue-band {

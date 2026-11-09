@@ -88,6 +88,7 @@ export class JsonValueEditorComponent {
   childRule(child: JsonEditorNode, index: number): JsonFieldRule | undefined {
     return this.options.rules?.[this.childPath(child, index)] ?? (this.entryType ? {
       type: this.entryType,
+      ...(this.node.type === "object" && this.rule?.propertyInteger ? { integer: true } : {}),
       ...(this.node.type === "array" && this.rule?.itemStringFormat ? { stringFormat: this.rule.itemStringFormat } : {}),
       ...(this.node.type === "array" && this.rule?.itemEditor ? { editor: this.rule.itemEditor } : {}),
     } : undefined);
