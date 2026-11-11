@@ -1,3 +1,4 @@
+<som-room-reset-dialog />
 <div class="app-shell">
   <dialog #unsavedDialog class="unsaved-dialog" aria-labelledby="unsaved-title" aria-describedby="unsaved-description"
     (cancel)="$event.preventDefault(); finishDraftDecision(false)">
@@ -6,8 +7,8 @@
     <p *ngIf="fieldJsonInvalid || rawJsonError" class="field-error">Stay and correct invalid JSON before saving.</p>
     <p role="status" aria-live="polite">{{ resourceMessage }}</p>
     <div class="dialog-actions">
-      <button class="secondary-button" type="button" autofocus (click)="finishDraftDecision(false)">Stay</button>
-      <button class="secondary-button" type="button" (click)="finishDraftDecision(true)">Discard changes</button>
+      <button class="secondary-button" type="button" autofocus [disabled]="savingWorldDocument" (click)="finishDraftDecision(false)">Stay</button>
+      <button class="secondary-button" type="button" [disabled]="savingWorldDocument" (click)="finishDraftDecision(true)">Discard changes</button>
       <button *ngIf="activeKind !== 'game'" class="primary-button" type="button" [disabled]="saveBlocked" (click)="saveAndContinue()">Save and continue</button>
     </div>
   </dialog>
@@ -211,10 +212,10 @@
             <div class="area-toolbar-actions">
               @if (activeKind === 'rooms') {
                 <div class="room-view-options" role="group" aria-label="Rooms view">
-                  <button #roomEditorTab type="button" class="secondary-button" [attr.aria-pressed]="!roomMapVisible"
+                  <button type="button" class="secondary-button" [attr.aria-pressed]="!roomMapVisible"
                     (click)="roomMapVisible = false">Editor</button>
                   <button type="button" class="secondary-button" [attr.aria-pressed]="roomMapVisible"
-                    (click)="openRoomMap()">Map</button>
+                    (click)="openRoomMap()">Area Builder</button>
                 </div>
               }
               <button
@@ -225,22 +226,40 @@
               >
                 {{ resourceStatus === 'loading' ? 'Loading' : 'Reload' }}
               </button>
-              <button class="primary-button" type="button" (click)="createNewResource()">
-                New {{ activeResource.label }}
-              </button>
+              @if (roomMapVisible) {
+                <button class="secondary-button" type="button" (click)="editAreaFromBuilder(true)"
+                  [disabled]="resourceStatus === 'saving'">New area</button>
+                <button class="secondary-button" type="button" (click)="editAreaFromBuilder()"
+                  [disabled]="!selectedResourceAreaId || resourceStatus === 'saving'">Edit area</button>
+              } @else {
+                <button class="primary-button" type="button" (click)="createNewResource()">
+                  New {{ activeResource.label }}
+                </button>
+              }
             </div>
           </div>
 
-          @if (activeKind === 'rooms' && roomMapOpened) {
+          @if (activeKind === 'rooms') {
             <som-area-room-map [hidden]="!roomMapVisible" [areaId]="selectedResourceAreaId" [areaName]="roomMapAreaName"
-              [rooms]="resourceDocuments" [initialRoomId]="selectedResourceId" [draft]="roomMapDraft"
+              [server]="serverIdentity" [rooms]="resourceDocuments" [initialRoomId]="selectedResourceId"
+              [draft]="roomMapDraft" [newRoom]="canvasRoomDraft" [newRoomPosition]="pendingRoomPosition"
               [draftInvalid]="fieldJsonInvalid || !!rawJsonError" [loading]="resourceStatus === 'loading'"
-              [saving]="resourceStatus === 'saving'" [loadError]="roomMapLoadError" (editRoom)="editRoomFromMap($event)" />
+              [saving]="resourceStatus === 'saving'" [loadError]="roomMapLoadError" (editRoom)="editRoomFromMap($event.id, $event.pointer)"
+              (editResets)="openRoomResets($event)"
+              (placeRoom)="placeRoomOnMap($event)" (moveNewRoom)="pendingRoomPosition = $event" />
+            @if (roomMapVisible && roomResetError) {
+              <p class="field-error" role="alert">{{ roomResetError }}</p>
+            }
           }
 
-          <div [hidden]="roomMapVisible">
-          <div class="resource-json-workspace">
-            <aside class="area-list" aria-label="Loaded resources">
+          <div [hidden]="roomMapVisible && !roomMapInspector">
+          @if (roomMapVisible && roomMapInspector) {
+            <h4 class="canvas-room-heading" #canvasRoomHeading tabindex="-1">
+              {{ selectedResourceId === 'new' ? 'New room fields' : 'Room fields · ' + resourceLabel(resourceDraft) }}
+            </h4>
+          }
+          <div class="resource-json-workspace" [class.canvas-room-editor]="roomMapVisible" id="room-fields">
+            <aside class="area-list" aria-label="Loaded resources" [hidden]="roomMapVisible">
               <div class="area-list-heading">
                 <strong>{{ activeResource.label }}</strong>
                 <span role="status">{{ filteredDocuments.length }} of {{ resourceDocuments.length }}</span>
@@ -290,7 +309,7 @@
               <div [class.ability-editor-sections]="jsonEditorFields.length > 0">
                 @for (field of jsonEditorFields; track field.key) {
                   <som-json-payload-editor #fieldEditor [label]="field.label" [value]="jsonFieldValue(field.key)"
-                    [documentKey]="editorIdentity" [requireObject]="true" [rules]="field.rules"
+                    [documentKey]="editorIdentity" [requireObject]="field.rules[''].type === 'object'" [rules]="field.rules"
                     [readonly]="!!rawJsonError || resourceStatus === 'saving'"
                     (stateChange)="updateJsonField(field.key, $event, fieldEditor.documentKey)" />
                 }
@@ -330,16 +349,29 @@
             <span>{{ isDirty ? 'Unsaved changes' : 'No unsaved changes' }}</span>
             <span class="area-message" role="status" aria-live="polite" aria-atomic="true">{{ resourceMessage }}</span>
             <span *ngIf="fieldJsonInvalid" class="field-error" role="alert">Correct editor validation errors before saving.</span>
+            @if (activeKind === 'areas' && selectedResourceId !== 'new') {
+              <button class="secondary-button" type="button" (click)="openAreaBuilder()" [disabled]="resourceStatus !== 'idle'">
+                Open Area Builder
+              </button>
+            }
             <button
               class="primary-button"
               type="button"
               (click)="saveActiveDocument()"
               [disabled]="saveBlocked"
             >
-              {{ activeKind === 'game' ? 'Save unavailable' : resourceStatus === 'saving' ? 'Saving' : 'Save Document' }}
+              {{ activeKind === 'game' ? 'Save unavailable' : resourceStatus === 'saving' ? 'Saving' : roomMapVisible ? 'Save room' : 'Save Document' }}
             </button>
           </div>
           </div>
+          @if (roomMapVisible && selectedResourceAreaId) {
+            <div class="area-toolbar-actions builder-next" role="group" aria-label="Other editors for this area">
+              <span>Continue in this area</span>
+              <button class="secondary-button" type="button" (click)="setActiveKind('items')" [disabled]="resourceStatus === 'saving'">Items</button>
+              <button class="secondary-button" type="button" (click)="setActiveKind('mobiles')" [disabled]="resourceStatus === 'saving'">Mobiles</button>
+              <button class="secondary-button" type="button" (click)="setActiveKind('resets')" [disabled]="resourceStatus === 'saving'">Resets</button>
+            </div>
+          }
         </div>
 
         @if (activeKind === 'game') {

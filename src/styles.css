@@ -862,6 +862,27 @@ button:disabled {
   min-width: 0;
 }
 
+.resource-json-workspace.canvas-room-editor {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.canvas-room-editor .area-list[hidden] {
+  display: none;
+}
+
+.canvas-room-editor .resource-payload-editor {
+  grid-column: 1;
+}
+
+.builder-next {
+  margin-top: 14px;
+}
+
+.canvas-room-heading {
+  margin: 20px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .room-view-options {
   display: inline-flex;
   gap: 4px;

@@ -2,7 +2,9 @@ import { directionNames } from "./constants";
 import { parseSerializedExit } from "./logic";
 
 export type RoomDirection = typeof directionNames[number];
-type Position = { x: number; y: number; floor: number };
+export type RoomPosition = { x: number; y: number; floor: number };
+type Position = RoomPosition;
+export const unsavedRoomId = "new";
 
 const steps: Record<RoomDirection, Position> = {
   north: { x: 0, y: -1, floor: 0 }, east: { x: 1, y: 0, floor: 0 },
@@ -32,11 +34,11 @@ function reference(value: unknown): string {
   return typeof value === "number" && Number.isSafeInteger(value) ? String(value) : "";
 }
 
-export function buildRoomMap(records: readonly unknown[], draft?: unknown): RoomMapGraph {
+export function buildRoomMap(records: readonly unknown[], draft?: unknown, newRoom?: Record<string, unknown>): RoomMapGraph {
   const rooms: RoomMapGraph = new Map();
   const exitLists = new Map<string, readonly unknown[]>();
   const vnums = new Map<string, string[]>();
-  for (const saved of records) {
+  for (const saved of newRoom ? [...records, { ...newRoom, id: unsavedRoomId }] : records) {
     if (!record(saved) || typeof saved["id"] !== "string" || !saved["id"] || rooms.has(saved["id"])) continue;
     const id = saved["id"];
     const source = record(draft) && draft["id"] === id && draft["areaId"] === saved["areaId"] ? draft : saved;
@@ -117,7 +119,7 @@ export function layoutRoomMap(
     }
   }
   for (const [id, position] of previous) {
-    if (rooms.has(id)) place(id, position);
+    if (rooms.has(id)) place(id, available(position));
   }
   const visited = new Set<string>();
   for (const seed of [...positions.keys(), anchor, ...rooms.keys()]) {

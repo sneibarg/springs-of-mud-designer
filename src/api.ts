@@ -8,6 +8,11 @@ export const THEME_STORAGE_KEY = "som-designer-theme";
 export const DEFAULT_API_BASE_URL = environment.designer.apiBaseUrl;
 export const DEFAULT_API_PROXY_ENABLED = environment.designer.useDevProxy;
 
+export function createContentDocumentId(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(12)),
+    (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export type DesignerTheme = "light" | "dark";
 
 export type DesignerSettings = {

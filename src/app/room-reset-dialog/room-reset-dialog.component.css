@@ -1,0 +1,57 @@
+.room-reset-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+
+h2 {
+  margin: 0;
+}
+
+.reset-list {
+  margin-bottom: 18px;
+}
+
+.reset-list-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.reset-list-heading h3 {
+  margin: 0;
+}
+
+.reset-list-items {
+  display: grid;
+  gap: 6px;
+  max-height: 13rem;
+  overflow: auto;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 3px;
+}
+
+.reset-list-items strong,
+.reset-list-items span {
+  white-space: normal;
+}
+
+.area-form {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 185px), 1fr));
+}
+
+.area-form label,
+.area-form select {
+  min-width: 0;
+}
+
+.reset-wide {
+  grid-column: 1 / -1;
+}
+
+#room-reset-target {
+  overflow-wrap: anywhere;
+}

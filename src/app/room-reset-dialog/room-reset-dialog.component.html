@@ -1,0 +1,75 @@
+<dialog #dialog class="unsaved-dialog room-reset-dialog" aria-labelledby="room-reset-title"
+  aria-describedby="room-reset-target" (cancel)="cancel($event)">
+  <h2 id="room-reset-title" tabindex="-1" autofocus>Room resets</h2>
+  @if (room; as target) {
+    <p id="room-reset-target">{{ target.name }} · Room {{ target.vnum }}</p>
+    @if (loading) {
+      <p role="status">Loading resets…</p>
+    } @else if (loadError) {
+      <p class="field-error" role="alert">{{ loadError }}</p>
+      <button class="secondary-button" type="button" (click)="loadResets()">Retry</button>
+    } @else if (draft; as reset) {
+      <section class="reset-list" aria-labelledby="room-saved-resets">
+        <div class="reset-list-heading">
+          <h3 id="room-saved-resets">Saved resets ({{ resets.length }})</h3>
+          <button class="secondary-button" type="button" [attr.aria-pressed]="!reset.id"
+            [disabled]="dirty || saving" (click)="selectReset('')">New reset</button>
+        </div>
+        @if (resets.length) {
+          <ul class="reset-list-items">
+            @for (existing of resets; track existing.id) {
+              <li>
+                <button class="area-list-item" type="button" [class.active]="existing.id === reset.id"
+                  [attr.aria-pressed]="existing.id === reset.id" [disabled]="dirty || saving"
+                  (click)="selectReset(existing.id)">
+                  <strong>
+                    {{ existing.command }} · {{ commands[existing.command].label }}
+                    @if (existing.command === 'M' || existing.command === 'O') { · {{ existing.arg1 }} }
+                  </strong>
+                  @if (existing.comment) { <span>{{ existing.comment }}</span> }
+                  <span>{{ existing.id }}</span>
+                </button>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p>This room has no saved resets.</p>
+        }
+      </section>
+      <form id="room-reset-form" (ngSubmit)="save()">
+        <fieldset class="area-form editor-fieldset" [disabled]="saving">
+          <legend>{{ reset.id ? 'Edit reset' : 'New reset details' }}</legend>
+          <label class="reset-wide">Command
+            <select [ngModel]="reset.command" (ngModelChange)="changeCommand($event)" name="command">
+              @for (command of commandOptions; track command) {
+                <option [value]="command">{{ command }} · {{ commands[command].label }}</option>
+              }
+            </select>
+          </label>
+          @for (field of fields; track field.argument) {
+            <label>{{ field.label }}
+              <input [name]="field.argument" [(ngModel)]="reset[field.argument]"
+                [attr.inputmode]="field.integer ? 'numeric' : null" aria-required="true" />
+            </label>
+          }
+          <label class="reset-wide">Comment
+            <textarea name="comment" rows="2" [(ngModel)]="reset.comment"></textarea>
+          </label>
+        </fieldset>
+      </form>
+      @if (saveError) { <p class="field-error" role="alert">{{ saveError }}</p> }
+      <p role="status">{{ saving ? 'Saving reset…' : dirty ? 'Unsaved reset changes. Save or discard them to choose another reset.' : status }}</p>
+    }
+  }
+  <div class="dialog-actions">
+    <button class="secondary-button" type="button" [disabled]="saving" (click)="close()">
+      {{ dirty ? 'Discard and close' : 'Close' }}
+    </button>
+    @if (draft && !loading && !loadError) {
+      @if (dirty) {
+        <button class="secondary-button" type="button" [disabled]="saving" (click)="restoreDraft()">Discard edits</button>
+      }
+      <button class="primary-button" type="submit" form="room-reset-form" [disabled]="saving || !dirty">Save reset</button>
+    }
+  </div>
+</dialog>

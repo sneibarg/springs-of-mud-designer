@@ -1,22 +1,32 @@
-<section #mapRoot class="area-map" aria-label="Area map">
+<section #mapRoot class="area-map" aria-label="Area canvas">
   <header class="map-heading">
     <div>
-      <span class="map-kicker">Rooms / Area map</span>
-      <h4>{{ areaName || 'Area map' }}</h4>
+      <span class="map-kicker">Area Builder</span>
+      <h4>{{ areaName || 'Area canvas' }}</h4>
     </div>
-    @if (draft) { <span class="pill muted">Unsaved room preview</span> }
+    @if (draft || newRoom) { <span class="pill muted">Unsaved room preview</span> }
   </header>
 
   @if (loading) { <p class="map-message" role="status">Loading rooms…</p> }
   @if (loadError) { <p class="map-message field-error" role="alert">{{ loadError }} Use Reload to try again.</p> }
-  @if (draftInvalid) { <p class="map-message" role="status">Showing the last valid room data. Open Editor to correct the room JSON.</p> }
+  @if (draftInvalid) { <p class="map-message" role="status">Showing the last valid room data. Correct the errors in the room fields.</p> }
+
+  @if (areaId) {
+    <div class="room-palette" role="group" aria-label="Room palette">
+      <strong class="map-kicker">Palette</strong>
+      <button class="primary-button" type="button" [disabled]="!canPlace" [draggable]="canPlace"
+        (dragstart)="startRoomDrag($event)" (dragend)="draggingRoom = undefined" (click)="addRoom()">+ Add room</button>
+      <span class="map-muted">Drag onto the canvas or activate Add room to place it in an open spot.</span>
+    </div>
+  }
+  <p class="map-muted placement-status" role="status">{{ placementMessage }}</p>
 
   @if (selectedRoom; as room) {
     <div class="map-toolbar">
       <label>Room
         <select #roomSelect [value]="room.id" (change)="selectRoom(roomSelect.value)">
           @for (option of roomOptions; track option.id) {
-            <option [value]="option.id">{{ option.vnum }} · {{ option.name }}</option>
+            <option [value]="option.id">{{ option.id === unsavedRoomId ? 'Draft' : option.vnum }} · {{ option.name }}</option>
           }
         </select>
       </label>
@@ -36,14 +46,20 @@
         </div>
       </div>
     </div>
+  }
 
+  @if (areaId) {
     <div class="map-layout">
-      <div #viewport class="map-viewport" [class.dragging]="drag" tabindex="0" role="region"
-        aria-label="Room map. Use arrow keys to pan."
+      <div #viewport class="map-viewport" [class.dragging]="drag" [class.drop-ready]="draggingRoom && canPlace" tabindex="0" role="region"
+        aria-label="Area canvas. Use arrow keys to pan."
         (pointerdown)="startPan($event)" (pointermove)="movePan($event)" (pointerup)="stopPan($event)"
-        (pointercancel)="stopPan($event)" (lostpointercapture)="stopPan($event)" (keydown)="panByKey($event)">
+        (pointercancel)="stopPan($event)" (lostpointercapture)="stopPan($event)" (keydown)="panByKey($event)"
+        (dragover)="allowRoomDrop($event)" (drop)="dropRoom($event)">
         <span class="map-compass" aria-label="North is up">↑ N</span>
-        <div class="map-plane" [class.compact]="zoom < .56" [class.distant]="zoom < .26" [style.--map-zoom]="zoom"
+        @if (!selectedRoom && canPlace) {
+          <p class="map-empty">Place the first room here.</p>
+        }
+        <div #mapPlane class="map-plane" [class.compact]="zoom < .56" [class.distant]="zoom < .26" [style.--map-zoom]="zoom"
           [style.transform]="'translate3d(' + panX + 'px,' + panY + 'px,0) scale(' + zoom + ')'">
           <svg class="map-links" width="1" height="1" aria-hidden="true">
             <defs>
@@ -57,22 +73,37 @@
             }
           </svg>
           @for (node of shownRooms; track node.id) {
-            <button type="button" class="room-node" [attr.aria-pressed]="node.id === room.id"
-              [attr.tabindex]="node.id === room.id ? 0 : -1"
+            <button type="button" class="room-node" [class.draft-node]="node.id === unsavedRoomId"
+              [attr.aria-pressed]="node.id === selectedRoom?.id" [draggable]="canPlace" [disabled]="saving || loading"
+              [attr.tabindex]="node.id === selectedRoom?.id ? 0 : -1"
               [attr.aria-label]="node.name + ', room ' + node.vnum" [title]="node.name"
               [style.left.px]="nodeX(node.id) - tile.width / 2" [style.top.px]="nodeY(node.id) - tile.height / 2"
-              [style.width.px]="tile.width" [style.height.px]="tile.height" (click)="selectRoom(node.id)">
-              <strong>{{ node.vnum || '—' }}</strong>
+              [style.width.px]="tile.width" [style.height.px]="tile.height" (click)="clickRoomNode(node.id, $event)"
+              (dblclick)="node.id !== unsavedRoomId && editResets.emit(node.id)"
+              (dragstart)="startRoomDrag($event, node.id)" (dragend)="draggingRoom = undefined">
+              <strong>{{ node.vnum || (node.id === unsavedRoomId ? 'Draft' : '—') }}</strong>
               <span>{{ node.name }}</span>
             </button>
           }
         </div>
       </div>
+      @if (selectedRoom; as room) {
       <aside class="map-room-details" aria-label="Selected room">
         <span class="map-kicker">Selected room</span>
         <h5>{{ room.name }}</h5>
         <span class="map-muted">Vnum {{ room.vnum || 'unassigned' }}</span>
-        <button class="secondary-button" type="button" [disabled]="saving || loading" (click)="editRoom.emit(room.id)">Edit room</button>
+        <button class="secondary-button" type="button" [disabled]="saving || loading" (click)="editRoom.emit({ id: room.id })">Edit room fields</button>
+        @if (room.id === unsavedRoomId) {
+          <p class="map-muted">Save this room to edit its resets.</p>
+        } @else {
+          <button class="secondary-button" type="button" [disabled]="saving || loading" (click)="editResets.emit(room.id)">Edit resets</button>
+        }
+        <div class="map-actions map-move" role="group" aria-label="Move room on the canvas">
+          <button class="secondary-button" type="button" aria-label="Move room left" [disabled]="!canPlace" (click)="nudgeRoom(room.id, -1, 0)">←</button>
+          <button class="secondary-button" type="button" aria-label="Move room up" [disabled]="!canPlace" (click)="nudgeRoom(room.id, 0, -1)">↑</button>
+          <button class="secondary-button" type="button" aria-label="Move room down" [disabled]="!canPlace" (click)="nudgeRoom(room.id, 0, 1)">↓</button>
+          <button class="secondary-button" type="button" aria-label="Move room right" [disabled]="!canPlace" (click)="nudgeRoom(room.id, 1, 0)">→</button>
+        </div>
         <ul class="map-exits" aria-label="Exits">
           @for (exit of room.exits; track $index) {
             <li>
@@ -94,15 +125,14 @@
           }
         </ul>
       </aside>
+      }
     </div>
 
     <footer class="map-footer map-muted">
-      <span role="status">{{ shownRooms.length }} shown · {{ roomOptions.length }} rooms in area</span>
-      <span>Arrowheads show travel direction. Dashed lines mark exits beyond this view.</span>
+      <span role="status">{{ shownRooms.length }} shown · {{ roomOptions.length }} on canvas</span>
+      <span>Double-click a saved room to edit its resets. Positions are saved in this browser.</span>
     </footer>
-  } @else if (!areaId) {
-    <p class="map-message">Select an area to see its map.</p>
-  } @else if (!loading && !loadError) {
-    <p class="map-message">No mappable rooms are loaded for this area.</p>
+  } @else {
+    <p class="map-message">Select an area or create one to start placing rooms.</p>
   }
 </section>

@@ -33,6 +33,7 @@ const { GuardListComponent } = load('src/app/guard-list.component.ts');
 const { LambdaListComponent } = load('src/app/lambda-list.component.ts');
 const { buildRoomMap, layoutRoomMap } = load('src/domain/room-map.ts');
 const { AreaRoomMapComponent } = load('src/app/area-room-map/area-room-map.component.ts');
+const { RoomResetDialogComponent } = load('src/app/room-reset-dialog/room-reset-dialog.component.ts');
 function deferred() { let resolve, reject; const promise = new Promise((a,b) => {resolve=a;reject=b;});return {promise,resolve,reject}; }
 function appWith(api = {}) {
   const app = new AppComponent({ list: async () => [], getAreas: async () => [], ...api }, { markForCheck() {} });
@@ -122,8 +123,142 @@ test('Area map: switching views preserves drafts and editing another room respec
   assert.equal(app.roomMapVisible, true);
   assert.equal(app.resourceDraft.name, 'Renamed gate');
   await discard(app, () => app.editRoomFromMap('b'));
-  assert.equal(app.roomMapVisible, false);
+  assert.equal(app.roomMapVisible, true);
+  assert.equal(app.roomMapInspector, true);
   assert.equal(app.selectedResourceId, 'b');
+});
+
+test('Area builder: a failed room POST keeps the placed draft and retries with the same ID', async () => {
+  const writes = [];
+  const app = appWith({ save: async (_server, _proxy, endpoint, payload, existing) => {
+    writes.push({ endpoint, payload, existing });
+    if (writes.length === 1) throw Error('fixture failure');
+    return payload;
+  } });
+  app.activeKind = 'rooms';
+  app.selectedResourceAreaId = 'town';
+  const placement = { x: 2, y: -1, floor: 1 };
+  const placements = [];
+  app.roomMap = { rememberPlacement: (...args) => placements.push(args) };
+  await app.placeRoomOnMap(placement);
+  assert.equal(app.isDirty, true);
+  assert.equal(buildRoomMap([], undefined, app.canvasRoomDraft).has('new'), true);
+  app.updateResourceDraft({ ...app.resourceDraft, vnum: '42', name: 'Gate' });
+  assert.equal(app.createRequest.method, 'POST');
+  await app.saveActiveDocument();
+  assert.equal(app.pendingRoomPosition, placement);
+  assert.equal(app.canvasRoomDraft.name, 'Gate');
+  assert.equal(placements.length, 0);
+  await app.saveActiveDocument();
+  assert.equal(writes[0].endpoint, '/api/v1/rooms');
+  assert.equal(writes[0].existing, false);
+  assert.match(writes[0].payload.id, /^[0-9a-f]{24}$/);
+  assert.equal(writes[1].payload.id, writes[0].payload.id);
+  assert.equal(app.pendingRoomPosition, undefined);
+  assert.equal(app.isDirty, false);
+  assert.deepEqual(placements, [[writes[1].payload.id, placement]]);
+  assert.equal(app.createRequest.method, 'PUT');
+});
+
+test('Area builder: a new area can open the canvas and carry its filter into each child editor', async () => {
+  const endpoints = [];
+  const app = appWith({
+    list: async (_server, _proxy, endpoint) => { endpoints.push(endpoint); return []; },
+    save: async (_server, _proxy, endpoint, payload, existing) => {
+      assert.equal(endpoint, '/api/v1/areas');
+      assert.equal(existing, false);
+      assert.match(payload.id, /^[0-9a-f]{24}$/);
+      return payload;
+    },
+  });
+  await app.setActiveKind('areas');
+  app.updateResourceDraft({ ...app.resourceDraft, name: 'New area', vnum: '100' });
+  await app.saveActiveDocument();
+  const areaId = app.selectedResourceId;
+  await app.openAreaBuilder();
+  assert.equal(app.roomMapVisible, true);
+  for (const kind of ['items', 'mobiles', 'resets']) {
+    await app.setActiveKind(kind);
+    assert.equal(app.selectedResourceAreaId, areaId);
+    assert.equal(app.resourceDraft.areaId, areaId);
+  }
+  assert.deepEqual(endpoints, ['/api/v1/areas', ...['rooms', 'items', 'mobiles', 'resets'].map(
+    kind => '/api/v1/' + kind + '/area/' + areaId)]);
+});
+
+test('Room reset dialog filters by area and command-specific room vnum, then creates and updates resets', async () => {
+  const room = { name: 'Gate', areaId: 'town', vnum: '0042', server: 'mock', proxy: false };
+  const existing = { id: 'door/1', areaId: 'town', command: 'D', arg1: '0042', arg2: '1', arg3: '2', arg4: null };
+  const secondDoor = { ...existing, id: 'door/2', arg2: '3' };
+  const mobile = { id: 'guard', areaId: 'town', command: 'M', arg1: '0100', arg2: '1', arg3: '0042', arg4: '1' };
+  const writes = [];
+  const dialog = new RoomResetDialogComponent({
+    list: async (server, proxy, endpoint) => {
+      assert.deepEqual([server, proxy, endpoint], ['mock', false, '/api/v1/resets/area/town']);
+      return [existing,
+        { ...existing, id: 'unrelated-area', areaId: 'other' },
+        { ...existing, id: 'container', command: 'P', arg3: '0042' },
+        { ...existing, id: 'unrelated-room', arg1: '42', arg3: '0042' },
+        secondDoor, mobile];
+    },
+    save: async (_server, _proxy, endpoint, payload, isExisting) => {
+      writes.push({ endpoint, payload, isExisting });
+      if (writes.length === 1) throw Error('fixture failure');
+      return payload;
+    },
+  }, { markForCheck() {} });
+  dialog.dialog = { nativeElement: { showModal() {}, close() {} } };
+  dialog.open(room);
+  await Promise.resolve();
+  assert.deepEqual(dialog.resets, [existing, secondDoor, mobile]);
+  assert.deepEqual(dialog.draft, existing);
+  dialog.selectReset(secondDoor.id);
+  assert.deepEqual(dialog.draft, secondDoor);
+  dialog.selectReset(mobile.id);
+  assert.deepEqual(dialog.draft, mobile);
+  dialog.selectReset('');
+  assert.equal(dialog.draft.id, undefined);
+  dialog.changeCommand('R');
+  assert.equal(dialog.draft.arg1, '0042');
+  assert.equal(dialog.draft.arg3, '');
+  dialog.draft.arg2 = '4';
+  await dialog.save();
+  assert.match(dialog.saveError, /fixture failure/);
+  assert.equal(dialog.dirty, true);
+  await dialog.save();
+  assert.equal(writes[1].endpoint, '/api/v1/resets');
+  assert.equal(writes[1].isExisting, false);
+  assert.equal(writes[1].payload.id, writes[0].payload.id);
+  assert.equal(writes[1].payload.arg1, '0042');
+  assert.equal(dialog.dirty, false);
+  assert.deepEqual(dialog.resets.map(({ id }) => id), [existing.id, secondDoor.id, mobile.id, writes[1].payload.id]);
+  dialog.selectReset(existing.id);
+  dialog.draft.comment = 'Keep the gate locked';
+  await dialog.save();
+  assert.deepEqual(writes[2], {
+    endpoint: '/api/v1/resets/door%2F1',
+    payload: { ...existing, comment: 'Keep the gate locked' },
+    isExisting: true,
+  });
+});
+
+test('Room reset dialog uses the saved room while retaining an unrelated room draft', async () => {
+  const app = appWith();
+  app.activeKind = 'rooms';
+  app.selectedResourceAreaId = 'town';
+  app.resourceDocuments = [
+    { id: 'a', name: 'Gate', areaId: 'town', vnum: '41' },
+    { id: 'b', name: 'Path', areaId: 'town', vnum: '42' },
+  ];
+  await app.selectResource('a');
+  app.updateResourceDraft({ ...app.resourceDraft, name: 'Unsaved gate' });
+  let scope;
+  app.roomResetDialog = { open: (room) => scope = room };
+  await app.editRoomFromMap('b', true);
+  app.openRoomResets('b');
+  assert.equal(scope.vnum, '42');
+  assert.equal(app.selectedResourceId, 'a');
+  assert.equal(app.resourceDraft.name, 'Unsaved gate');
 });
 test('UX-001: Stay protects drafts; same selection is a no-op; Discard continues', async () => {
   const app = appWith();
@@ -395,6 +530,63 @@ test('Skills: each scoped editor keeps its own validation state and preserves th
   assert.equal(app.saveBlocked, true);
 });
 
+test('Spells: scoped JSON editors validate and save class maps, payload, affects, and ordered lambda source', async () => {
+  let sent;
+  const app = appWith({ save: async (_base, _proxy, endpoint, payload, existing) => {
+    sent = { endpoint, payload, existing };
+    return payload;
+  } });
+  const guards = [{ predicate: 'lambda ctx: True', extension: { active: false } }];
+  app.updateRawJson(JSON.stringify({ name: 'Flame', guards, affectData: null, payload: null }));
+  const documentKey = app.editorIdentity;
+  const editors = {};
+  for (const field of app.jsonEditorFields) {
+    assert.equal(app.structuredFieldNames.includes(field.key), false);
+    const editor = await payloadEditor(app.jsonFieldValue(field.key), {
+      documentKey, requireObject: field.rules[''].type === 'object', rules: field.rules,
+    });
+    editor.stateChange.listener = state => app.updateJsonField(field.key, state, documentKey);
+    app.updateJsonField(field.key, editor.stateChange.last, documentKey);
+    editor.switchMode('json');
+    editors[field.key] = editor;
+  }
+  assert.deepEqual(Object.keys(editors), ['ratingByClass', 'levelByClass', 'payload', 'affectData', 'lambdas']);
+  assert.equal(app.resourceDraft.affectData, null);
+  assert.equal(app.resourceDraft.payload, null);
+  assert.equal(app.resourceDraft.lambdas, undefined);
+  assert.equal(app.usesGuardCards(), true);
+  assert.equal(editors.lambdas.rules[''].itemEditor, 'code');
+
+  const affects = [{ duration: 3, extension: { values: [true, null, 4] } }, { duration: 1 }];
+  const sources = ['lambda ctx: ctx.caster  ', 'lambda ctx: (\n    ctx.target\n)'];
+  editors.affectData.editRaw('[false]');
+  editors.ratingByClass.editRaw('{"mage":2.5}');
+  editors.levelByClass.editRaw('{"mage":12}');
+  editors.payload.editRaw('{"flags":[true,null,"spell"]}');
+  editors.lambdas.editRaw(JSON.stringify(sources));
+  await app.saveActiveDocument();
+  assert.equal(sent, undefined);
+  editors.affectData.editRaw(JSON.stringify(affects));
+  assert.equal(app.saveBlocked, true);
+  editors.ratingByClass.editRaw('{"mage":2}');
+  assert.equal(app.saveBlocked, false);
+  await app.saveActiveDocument();
+  assert.equal(sent.endpoint, '/api/v1/spells');
+  assert.equal(sent.existing, false);
+  assert.match(sent.payload.id, /^[a-f0-9]{24}$/);
+  assert.deepEqual(sent.payload.affectData, affects);
+  assert.deepEqual(sent.payload.lambdas, sources);
+  assert.deepEqual(sent.payload.guards, guards);
+  assert.deepEqual(sent.payload.payload, { flags: [true, null, 'spell'] });
+  assert.deepEqual(sent.payload.levelByClass, { mage: 12 });
+  assert.deepEqual(sent.payload.ratingByClass, { mage: 2 });
+  assert.equal(app.createRequest.method, 'PUT');
+
+  app.updateRawJson('{"name":"Flame","lambdas":[{}]}');
+  assert.match(app.rawJsonError, /\/lambdas\/0/);
+  assert.equal(app.saveBlocked, true);
+});
+
 test('Commands: ordered lambda cards preserve source and row identity across draft echoes', () => {
   const list = new LambdaListComponent({ nativeElement: { querySelector: () => null, querySelectorAll: () => [] } });
   const original = ['lambda ctx: True', 'lambda ctx: True'];
@@ -624,7 +816,7 @@ for (const [kind, defaults, rules] of [['mobiles',emptyMobileDraft,mobileEditorR
       let sent;const app=appWith({save:async(_base,_proxy,endpoint,payload,isExisting)=>{sent={endpoint,payload,isExisting};return {...payload,id:'record'};}});
       app.activeKind=kind;
       const value={...structuredClone(defaults),areaId:'A',name:'record',...(existing?{id:'record'}:{})};
-      if(kind==='rooms') { value.exits=['{"direction": 0, "to_room_vnum": 42}'];value.mobiles={'mob/a':'002'}; }
+      if(kind==='rooms') { value.vnum='42';value.exits=['{"direction": 0, "to_room_vnum": 42}'];value.mobiles={'mob/a':'002'}; }
       else { value.flags='AB';value.statusFlags={awake:true,nested:{count:3,optional:null,list:[false,2]}}; }
       value.extension={preserved:[true,null,'text']};
       app.replaceDraft(value,existing?'record':'new');
@@ -654,7 +846,7 @@ for (const [kind, defaults, rules] of [['mobiles',emptyMobileDraft,mobileEditorR
   });
   test(kind + ': save failure retains edits and area cancellation retains the draft', async () => {
     const app=appWith({save:async()=>{throw Error('fixture failure');}});app.activeKind=kind;app.selectedResourceAreaId='A';
-    app.replaceDraft({...structuredClone(defaults),areaId:'A',name:'record'});
+    app.replaceDraft({...structuredClone(defaults),areaId:'A',vnum:'42',name:'record'});
     app.updatePayloadEditor({status:'valid',dirty:true,value:{...app.resourceDraft,name:'unsaved'}});
     await app.saveActiveDocument();assert.equal(app.resourceDraft.name,'unsaved');assert.match(app.resourceMessage,/fixture failure/);
     const select={value:'B'},change=app.onAreaFilterChange('B',select);app.finishDraftDecision(false);await change;

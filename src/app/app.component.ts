@@ -1,20 +1,23 @@
 import { CommonModule } from "@angular/common";
-import { ChangeDetectorRef, Component, ElementRef, HostListener, OnInit, ViewChild } from "@angular/core";
+import { afterNextRender, ChangeDetectorRef, Component, ElementRef, HostListener, Injector, OnInit, ViewChild } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { SomApiService } from "./api.service";
 import { GuardListComponent } from "./guard-list.component";
 import { AreaRoomMapComponent } from "./area-room-map/area-room-map.component";
+import { RoomResetDialogComponent } from "./room-reset-dialog/room-reset-dialog.component";
+import type { RoomPosition } from "../domain/room-map";
 import { LambdaListComponent } from "./lambda-list.component";
 import { ResourceFormComponent, type ResourceFormDocument } from "./resource-form.component";
 import { JsonPayloadEditorComponent } from "./json-payload-editor/json-payload-editor.component";
 import { itemEditorRules } from "../domain/item-editor";
 import { gameEditorRules } from "../domain/game-editor";
-import { commandJsonFields, commandJsonRules, skillJsonFields, skillJsonRules } from "../domain/ability-editor";
+import { commandJsonFields, commandJsonRules, skillJsonFields, skillJsonRules, spellJsonFields, spellJsonRules } from "../domain/ability-editor";
 import { mobileEditorRules, roomEditorRules, specialEditorRules } from "../domain/world-resource-editor";
 import { isJsonValue, validateJsonValue, type JsonEditorRules, type JsonEditorState } from "../domain/json-editor";
 import { apiResources, workQueue } from "../data";
 import {
   buildApiUrl,
+  createContentDocumentId,
   resolveFetchBaseUrl,
   loadDesignerSettings,
   readSavedApiBaseUrl,
@@ -65,7 +68,8 @@ type ResourceStatus = "idle" | "loading" | "saving";
 @Component({
   selector: "som-root",
   standalone: true,
-  imports: [CommonModule, FormsModule, GuardListComponent, LambdaListComponent, ResourceFormComponent, JsonPayloadEditorComponent, AreaRoomMapComponent],
+  imports: [CommonModule, FormsModule, GuardListComponent, LambdaListComponent, ResourceFormComponent, JsonPayloadEditorComponent,
+    AreaRoomMapComponent, RoomResetDialogComponent],
   templateUrl: "./app.component.html",
 })
 export class AppComponent implements OnInit {
@@ -95,8 +99,10 @@ export class AppComponent implements OnInit {
   areasNavExpanded = true;
   abilitiesNavExpanded = true;
   roomMapVisible = false;
-  roomMapOpened = false;
   roomMapLoadError = "";
+  roomResetError = "";
+  roomMapInspector = false;
+  pendingRoomPosition?: RoomPosition;
 
   activeKind: FeatureKind = "spells";
   apiBaseUrl = readSavedApiBaseUrl();
@@ -116,6 +122,7 @@ export class AppComponent implements OnInit {
   private structuredFieldInvalid = false;
   private readonly invalidJsonFields = new Set<string>();
   private readonly emptyJsonField = {};
+  private readonly emptyJsonArray: readonly unknown[] = [];
   searchQuery = "";
   editorIdentity = 0;
   private baseline = this.resourceDraftText;
@@ -124,21 +131,29 @@ export class AppComponent implements OnInit {
   private loadVersion = 0;
   private loading = false;
   private saving = false;
-  private serverIdentity = buildApiUrl(this.apiBaseUrl, this.useDevProxy, "");
+  private newDocumentId?: string;
+  serverIdentity = buildApiUrl(this.apiBaseUrl, this.useDevProxy, "");
   @ViewChild("unsavedDialog") private unsavedDialog?: ElementRef<HTMLDialogElement>;
-  @ViewChild("roomEditorTab") private roomEditorTab?: ElementRef<HTMLButtonElement>;
+  @ViewChild("canvasRoomHeading") private canvasRoomHeading?: ElementRef<HTMLHeadingElement>;
+  @ViewChild(AreaRoomMapComponent) private roomMap?: AreaRoomMapComponent;
+  @ViewChild(RoomResetDialogComponent) private roomResetDialog?: RoomResetDialogComponent;
   private pendingDraftDecision?: (discard: boolean) => void;
   selectedResourceId = "new";
   selectedResourceAreaId = "";
 
-  constructor(private readonly api: SomApiService, private readonly changeDetector: ChangeDetectorRef) {}
+  constructor(private readonly api: SomApiService, private readonly changeDetector: ChangeDetectorRef,
+    private readonly injector: Injector) {}
 
   get resourceStatus(): ResourceStatus {
     return this.saving ? "saving" : this.loading ? "loading" : "idle";
   }
 
+  get savingWorldDocument(): boolean {
+    return this.saving && (this.activeKind === "areas" || this.activeKind === "rooms");
+  }
+
   get isDirty(): boolean {
-    return this.fieldJsonInvalid || this.resourceDraftText !== this.baseline;
+    return !!this.pendingRoomPosition || this.fieldJsonInvalid || this.resourceDraftText !== this.baseline;
   }
 
   get fieldJsonInvalid(): boolean {
@@ -148,11 +163,15 @@ export class AppComponent implements OnInit {
   get jsonEditorFields() {
     if (this.activeKind === "skills") return skillJsonFields;
     if (this.activeKind === "commands") return commandJsonFields;
+    if (this.activeKind === "spells") return spellJsonFields;
     return [];
   }
 
   jsonFieldValue(key: string): unknown {
-    return this.resourceDraft[key] ?? this.emptyJsonField;
+    const value = this.resourceDraft[key];
+    const field = this.jsonEditorFields.find((field) => field.key === key);
+    if (field?.rules[""].type === "array") return value === undefined ? this.emptyJsonArray : value;
+    return value ?? this.emptyJsonField;
   }
 
   get saveBlocked(): boolean {
@@ -174,29 +193,79 @@ export class AppComponent implements OnInit {
       ? this.resourceDraft : undefined;
   }
 
-  openRoomMap(): void {
-    this.roomMapOpened = true;
-    this.roomMapVisible = true;
+  get canvasRoomDraft(): ResourceDocument | undefined {
+    return this.pendingRoomPosition ? this.resourceDraft : undefined;
   }
 
-  async editRoomFromMap(id: string): Promise<void> {
+  openRoomMap(): void {
+    this.roomMapVisible = true;
+    this.roomMapInspector = this.selectedResourceId !== "new" || this.isDirty;
+  }
+
+  async editRoomFromMap(id: string, pointer = false): Promise<void> {
+    if (this.saving || this.loading) return;
+    // Keep a pointer click from interrupting a double-click with the unsaved room dialog.
+    if (pointer && this.isDirty && id !== this.selectedResourceId) return;
     await this.selectResource(id);
-    if (this.activeKind === "rooms" && this.selectedResourceId === id) {
-      this.roomMapVisible = false;
-      this.changeDetector.markForCheck();
-      this.roomEditorTab?.nativeElement.focus();
+    if (this.activeKind !== "rooms" || this.selectedResourceId !== id) return;
+    if (!pointer) this.roomMap?.selectRoom(id);
+    this.openCanvasRoomFields(!pointer);
+  }
+
+  openRoomResets(id: string): void {
+    if (this.activeKind !== "rooms" || this.resourceStatus !== "idle") return;
+    this.roomResetError = "";
+    const room = this.resourceDocuments.find((document) => document.id === id);
+    if (!room || !room.areaId || room.areaId !== this.selectedResourceAreaId) return;
+    if (typeof room.vnum !== "string" || !room.vnum.trim()) {
+      this.roomResetError = "Save a vnum for this room before editing its resets.";
+      return;
     }
+    this.roomResetDialog?.open({
+      areaId: room.areaId, vnum: room.vnum, name: room.name || "Unnamed room",
+      server: this.apiBaseUrl, proxy: this.useDevProxy,
+    });
+  }
+
+  async placeRoomOnMap(position: RoomPosition): Promise<void> {
+    if (!this.selectedResourceAreaId || this.roomMapLoadError || this.resourceStatus !== "idle"
+      || !await this.canReplaceDraft()) return;
+    this.invalidateWorkspace();
+    this.replaceDraft(this.newDraftForArea());
+    this.pendingRoomPosition = position;
+    this.resourceMessage = "Room placed. Enter its name and vnum, then save it.";
+    this.openCanvasRoomFields();
+  }
+
+  private openCanvasRoomFields(focus = true): void {
+    this.roomMapInspector = true;
+    this.changeDetector.markForCheck();
+    if (focus) afterNextRender(() => this.canvasRoomHeading?.nativeElement.focus(), { injector: this.injector });
+  }
+
+  async openAreaBuilder(): Promise<void> {
+    const areaId = this.selectedResourceId;
+    if (this.activeKind !== "areas" || areaId === "new" || !await this.canReplaceDraft()) return;
+    this.selectedResourceAreaId = areaId;
+    this.switchResourceKind("rooms");
+  }
+
+  async editAreaFromBuilder(newArea = false): Promise<void> {
+    const area = newArea ? undefined : this.areas.find(({ id }) => id === this.selectedResourceAreaId);
+    if (!await this.canReplaceDraft()) return;
+    this.switchResourceKind("areas", area);
   }
 
   @HostListener("window:beforeunload", ["$event"])
   beforeUnload(event: BeforeUnloadEvent): void {
-    if (this.isDirty) {
+    if (this.isDirty || this.roomResetDialog?.dirty) {
       event.preventDefault();
       event.returnValue = "";
     }
   }
 
   private async canReplaceDraft(): Promise<boolean> {
+    if (this.savingWorldDocument) return false;
     if (!this.isDirty) return true;
     if (this.pendingDraftDecision) return false;
     return new Promise<boolean>((resolve) => {
@@ -206,6 +275,7 @@ export class AppComponent implements OnInit {
   }
 
   finishDraftDecision(discard: boolean): void {
+    if (this.savingWorldDocument) return;
     this.unsavedDialog?.nativeElement.close();
     this.pendingDraftDecision?.(discard);
     this.pendingDraftDecision = undefined;
@@ -223,6 +293,8 @@ export class AppComponent implements OnInit {
   }
 
   private replaceDraft(document: ResourceDocument, selectedId = "new"): void {
+    this.pendingRoomPosition = undefined;
+    this.newDocumentId = undefined;
     this.gamePreviewExpanded = false;
     this.resourceDraft = structuredClone(document);
     this.resourceDraftText = this.toPrettyJson(this.resourceDraft);
@@ -333,10 +405,15 @@ export class AppComponent implements OnInit {
 
   async setActiveKind(kind: FeatureKind): Promise<void> {
     if (kind === this.activeKind || !await this.canReplaceDraft()) return;
+    this.switchResourceKind(kind);
+  }
+
+  private switchResourceKind(kind: FeatureKind, area?: AreaView): void {
     this.invalidateWorkspace();
     this.activeKind = kind;
     this.searchQuery = "";
     this.resetResourceWorkspace();
+    if (area?.id) this.replaceDraft({ ...area }, area.id);
     this.changeDetector.markForCheck();
     if (kind !== "settings") void this.loadActiveKindData();
   }
@@ -481,11 +558,17 @@ export class AppComponent implements OnInit {
     if (this.selectedResourceId !== "new") payload.id = this.selectedResourceId;
     const message = this.validateDocument(payload, this.activeResource);
     if (message) throw new Error(message);
-    const isExistingDocument = Boolean(payload.id);
+    const worldDocument = this.activeKind === "areas" || this.activeKind === "rooms";
+    const isExistingDocument = this.selectedResourceId !== "new" || (!worldDocument && Boolean(payload.id));
+    // The area, room, and spell POST endpoints require a client-supplied ID.
+    if (!isExistingDocument && (worldDocument || this.activeKind === "spells")) {
+      this.newDocumentId ??= createContentDocumentId();
+      payload.id = this.newDocumentId;
+    }
     return {
       payload,
       isExistingDocument,
-      endpoint: isExistingDocument ? this.activeResource.endpoint + "/" + payload.id : this.activeResource.endpoint,
+      endpoint: isExistingDocument ? this.activeResource.endpoint + "/" + encodeURIComponent(payload.id!) : this.activeResource.endpoint,
     };
   }
 
@@ -502,12 +585,17 @@ export class AppComponent implements OnInit {
     const resource = this.activeResource;
     const workspace = this.workspaceVersion;
     const revision = this.draftRevision;
+    const placement = this.pendingRoomPosition;
     this.saving = true;
     this.resourceMessage = "Saving document…";
     try {
       const response = await this.api.save<unknown>(this.apiBaseUrl, this.useDevProxy, endpoint, payload, isExistingDocument);
       const saved = this.normalizeDocument(response, resource.kind);
       if (workspace !== this.workspaceVersion) return;
+      if (placement && saved.id && saved.areaId === this.selectedResourceAreaId) {
+        this.roomMap?.rememberPlacement(saved.id, placement);
+      }
+      this.pendingRoomPosition = undefined;
       this.resourceDocuments = this.resourceDocuments.filter((document) => document.id !== saved.id);
       if (!this.requiresAreaFilter(resource.kind) || saved.areaId === this.selectedResourceAreaId) {
         this.resourceDocuments = [...this.resourceDocuments, saved].sort((left, right) => this.compareDocuments(left, right));
@@ -546,6 +634,8 @@ export class AppComponent implements OnInit {
     }
     this.invalidateWorkspace();
     this.selectedResourceAreaId = areaId;
+    this.roomResetError = "";
+    this.roomMapInspector = false;
     this.resourceDocuments = [];
     this.replaceDraft(this.newDraftForArea());
     void this.loadActiveDocuments(false);
@@ -584,9 +674,10 @@ export class AppComponent implements OnInit {
   }
 
   private resetResourceWorkspace(): void {
-    this.roomMapVisible = false;
-    this.roomMapOpened = false;
+    this.roomMapVisible = this.activeKind === "rooms";
+    this.roomMapInspector = false;
     this.roomMapLoadError = "";
+    this.roomResetError = "";
     this.resourceDocuments = [];
     this.replaceDraft(this.newDraftForArea());
     this.resourceMessage = "";
@@ -676,6 +767,11 @@ export class AppComponent implements OnInit {
       return "Area name is required.";
     }
 
+    if ((this.activeKind === "areas" || this.activeKind === "rooms") && this.selectedResourceId === "new"
+      && !String(document.vnum ?? "").trim()) {
+      return "Vnum is required to create a " + (this.activeKind === "areas" ? "new area." : "new room.");
+    }
+
     if (this.activeKind === "rooms") {
       return validateRoom(document as unknown as RoomView);
     }
@@ -694,7 +790,8 @@ export class AppComponent implements OnInit {
   private parseDraft(text: string): ResourceDocument {
     const parsed: unknown = JSON.parse(text);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Draft must be a JSON object.");
-    const rules = this.activeKind === "skills" ? skillJsonRules : this.activeKind === "commands" ? commandJsonRules : undefined;
+    const rules = this.activeKind === "skills" ? skillJsonRules : this.activeKind === "commands" ? commandJsonRules
+      : this.activeKind === "spells" ? spellJsonRules : undefined;
     if (rules) {
       if (!isJsonValue(parsed)) throw new Error("Use finite numbers and valid JSON values.");
       const [issue] = validateJsonValue(parsed, parsed, { rules });
