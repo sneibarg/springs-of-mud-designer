@@ -68,19 +68,25 @@
   @if (isCollection) {
     <div [id]="controlId + '-children'" [hidden]="!node.expanded" class="node-children">
       @if (renderChildren) {
+      @if (isLambdaList && node.children.length > 1 && !orderLocked) {
+        <p class="lambda-order-hint">Drag lambdas to reorder, or press Alt+Up or Alt+Down in a lambda’s source field.</p>
+      }
       @for (child of node.children; track child.id; let index = $index) {
         <div class="child-row" [class.collection-row]="child.type === 'object' || child.type === 'array' || childRule(child, index)?.stringFormat === 'json-object' || childRule(child, index)?.editor === 'code'"
-          [class.multiline-row]="child.type === 'string' && child.multiline">
+          [class.multiline-row]="child.type === 'string' && child.multiline" [class.guard-card]="isLambdaList"
+          [draggable]="isLambdaList && !orderLocked" (dragstart)="startLambdaDrag($event, child)"
+          (dragend)="endLambdaDrag()" (dragover)="allowLambdaDrop($event)" (drop)="dropLambda($event, index)"
+          (keydown.alt.arrowup)="moveLambdaByKey($event, index, -1)" (keydown.alt.arrowdown)="moveLambdaByKey($event, index, 1)">
           <som-json-value-editor [node]="child" [path]="childPath(child, index)" [label]="childLabel(child, index)"
             [options]="options" [showTools]="showTools" [rule]="childRule(child, index)" [readonly]="locked" (edited)="edited.emit()" />
           @if (showTools || rule?.itemEditor === 'code') {
           <div class="child-actions">
-            @if (node.type === 'array') {
+            @if (node.type === 'array' && !isLambdaList) {
               <button type="button" class="text-button" (click)="move(index, -1)" [disabled]="index === 0 || orderLocked"
                 [attr.aria-label]="'Move ' + childLabel(child, index) + ' up'">Move up</button>
               <button type="button" class="text-button" (click)="move(index, 1)" [disabled]="index === node.children.length - 1 || orderLocked"
                 [attr.aria-label]="'Move ' + childLabel(child, index) + ' down'">Move down</button>
-            } @else {
+            } @else if (node.type === 'object') {
               <button type="button" class="text-button" (click)="startRename(child)" [disabled]="childLocked(child, index)"
                 [attr.aria-label]="'Rename ' + childLabel(child, index)">Rename</button>
             }
@@ -125,7 +131,7 @@
         </div>
       }
       @if (actionError) { <p class="field-error" [id]="actionErrorId" role="alert">{{ actionError }}</p> }
-      @if (showTools || node.type === 'array') {
+      @if (showAddButton && (showTools || node.type === 'array')) {
       <button type="button" class="secondary-button add-button" [attr.data-add-button]="node.id" (click)="rule?.itemEditor === 'code' ? addCodeEntry() : startAdd()" [disabled]="locked || (node.type === 'array' && orderLocked)">
         Add {{ rule?.itemEditor === 'code' ? 'lambda' : node.type === 'array' ? 'item' : 'property' }} to {{ label }}
       </button>

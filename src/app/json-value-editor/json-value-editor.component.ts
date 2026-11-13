@@ -23,6 +23,7 @@ export class JsonValueEditorComponent {
   @Input() rule?: JsonFieldRule;
   @Input() readonly = false;
   @Input() showTools = false;
+  @Input() showAddButton = true;
   @Output() edited = new EventEmitter<void>();
 
   adding = false;
@@ -35,6 +36,7 @@ export class JsonValueEditorComponent {
   renameText = "";
   removingId: number | null = null;
   childrenRendered = false;
+  private draggedLambda?: JsonEditorNode;
 
   constructor(private readonly host: ElementRef<HTMLElement>, private readonly injector: Injector) {}
 
@@ -49,6 +51,7 @@ export class JsonValueEditorComponent {
   get orderLocked(): boolean {
     return this.locked || pathContainsReadOnly(this.path, this.options.readOnlyPaths);
   }
+  get isLambdaList(): boolean { return this.node.type === "array" && this.rule?.itemEditor === "code"; }
   get types(): readonly JsonValueType[] {
     return this.rule ? this.rule.nullable ? [this.rule.type, "null"] : [this.rule.type] : jsonValueTypes;
   }
@@ -75,7 +78,7 @@ export class JsonValueEditorComponent {
     if (action === "rename") this.renamingId = null;
     if (action === "remove") this.removingId = null;
     this.actionError = "";
-    this.focus(action === "add" ? `[data-add-button="${this.node.id}"]` : `#json-value-${child?.id ?? this.node.id}`);
+    this.focus(action === "add" ? this.addFocusSelector : `#json-value-${child?.id ?? this.node.id}`);
   }
 
   childPath(child: JsonEditorNode, index: number): string {
@@ -125,6 +128,7 @@ export class JsonValueEditorComponent {
     this.focus(`#${this.controlId}`);
   }
   startAdd(): void {
+    this.node.expanded = true;
     this.adding = true;
     this.newKey = "";
     this.newType = this.entryType ?? "string";
@@ -184,7 +188,7 @@ export class JsonValueEditorComponent {
     this.removingId = null;
     this.edited.emit();
     const next = this.node.children[Math.min(index, this.node.children.length - 1)];
-    this.focus(next ? `#json-value-${next.id}` : `[data-add-button="${this.node.id}"]`);
+    this.focus(next ? `#json-value-${next.id}` : this.addFocusSelector);
   }
   move(index: number, offset: number): void {
     if (this.locked || this.node.type !== "array") return;
@@ -196,6 +200,40 @@ export class JsonValueEditorComponent {
     this.edited.emit();
     this.focus(`#json-value-${child.id}`);
   }
+  moveLambdaByKey(event: Event, index: number, offset: number): void {
+    if (!this.isLambdaList || this.orderLocked) return;
+    event.preventDefault();
+    this.move(index, offset);
+  }
+
+  startLambdaDrag(event: DragEvent, child: JsonEditorNode): void {
+    if (!this.isLambdaList || this.orderLocked || !event.dataTransfer) return;
+    this.draggedLambda = child;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-som-lambda-row", String(child.id));
+  }
+
+  allowLambdaDrop(event: DragEvent): void {
+    if (!this.draggedLambda || this.orderLocked) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  }
+
+  dropLambda(event: DragEvent, index: number): void {
+    if (!this.draggedLambda || this.orderLocked) return;
+    event.preventDefault();
+    const from = this.node.children.indexOf(this.draggedLambda);
+    this.endLambdaDrag();
+    if (from >= 0) this.move(from, index - from);
+  }
+
+  endLambdaDrag(): void {
+    this.draggedLambda = undefined;
+  }
+  private get addFocusSelector(): string {
+    return this.showAddButton ? `[data-add-button="${this.node.id}"]` : `#${this.controlId}`;
+  }
+
   private focus(selector: string): void {
     afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(selector)?.focus(), { injector: this.injector });
   }

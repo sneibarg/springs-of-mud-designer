@@ -1,7 +1,9 @@
 import { afterNextRender, Component, ElementRef, EventEmitter, Injector, Input, OnChanges, Output, SimpleChanges, ViewChild } from "@angular/core";
+import { FormsModule } from "@angular/forms";
+import { directionNames } from "../../domain/constants";
 import {
   buildRoomMap, layoutRoomMap, oppositeDirection, roomExitStub, roomLinkPath, roomTile, unsavedRoomId,
-  type MapRoom, type RoomMapGraph, type RoomPosition,
+  type MapRoom, type RoomConnector, type RoomDirection, type RoomMapGraph, type RoomPosition,
 } from "../../domain/room-map";
 
 type MapLink = { key: string; path: string; twoWay?: boolean; stub?: boolean };
@@ -10,6 +12,7 @@ const emptyGraph: RoomMapGraph = new Map();
 @Component({
   selector: "som-area-room-map",
   standalone: true,
+  imports: [FormsModule],
   templateUrl: "./area-room-map.component.html",
   styleUrl: "./area-room-map.component.css",
 })
@@ -26,16 +29,25 @@ export class AreaRoomMapComponent implements OnChanges {
   @Input() loading = false;
   @Input() loadError = "";
   @Input() saving = false;
+  @Input() connectorError = "";
   @Output() editRoom = new EventEmitter<{ id: string; pointer?: boolean }>();
   @Output() editResets = new EventEmitter<string>();
   @Output() placeRoom = new EventEmitter<RoomPosition>();
   @Output() moveNewRoom = new EventEmitter<RoomPosition>();
+  @Output() removeNewRoom = new EventEmitter<void>();
+  @Output() connectRooms = new EventEmitter<RoomConnector>();
+  @ViewChild("addRoomButton") private addRoomButton?: ElementRef<HTMLButtonElement>;
   @ViewChild("viewport") private viewport?: ElementRef<HTMLElement>;
   @ViewChild("mapPlane") private mapPlane?: ElementRef<HTMLElement>;
   @ViewChild("mapRoot") private mapRoot?: ElementRef<HTMLElement>;
 
   readonly tile = roomTile;
   readonly unsavedRoomId = unsavedRoomId;
+  readonly directions = directionNames;
+  connectorOpen = false;
+  connectorFrom = "";
+  connectorTo = "";
+  connectorDirection: RoomDirection = "north";
   graph = emptyGraph;
   roomOptions: MapRoom[] = [];
   selectedRoom?: MapRoom;
@@ -68,12 +80,15 @@ export class AreaRoomMapComponent implements OnChanges {
       this.drag = undefined;
       this.draggingRoom = undefined;
       this.placementMessage = "";
+      this.closeConnector();
     }
     if (!changes["areaId"] && !changes["server"] && !changes["rooms"] && !changes["draft"]
       && !changes["initialRoomId"] && !changes["newRoom"] && !changes["newRoomPosition"]) return;
 
     this.graph = buildRoomMap(this.rooms, this.draft, this.newRoom);
     this.roomOptions = [...this.graph.values()];
+    if (!this.graph.has(this.connectorFrom)) this.connectorFrom = "";
+    if (!this.graph.has(this.connectorTo)) this.connectorTo = "";
     const initial = this.graph.get(this.initialRoomId);
     const current = this.selectedRoom && this.graph.get(this.selectedRoom.id);
     const next = (changes["initialRoomId"] || changes["newRoom"] ? initial : undefined) ?? current ?? initial ?? this.roomOptions[0];
@@ -90,11 +105,53 @@ export class AreaRoomMapComponent implements OnChanges {
       this.revealNearby(next);
       if (!this.roomInView(next.id)) this.centerRoom();
     }
+    if (next && (changes["draft"] || changes["newRoom"])) this.revealNearby(next);
     this.refreshView();
   }
 
   get canPlace(): boolean {
     return !!this.areaId && !this.loading && !this.saving && !this.loadError;
+  }
+
+  get canConnect(): boolean {
+    return this.canPlace && this.roomOptions.length >= 2;
+  }
+
+  toggleConnector(): void {
+    if (this.connectorOpen) this.closeConnector();
+    else {
+      this.connectorOpen = true;
+      this.connectorFrom = this.selectedRoom?.id ?? "";
+    }
+  }
+
+  private closeConnector(): void {
+    this.connectorOpen = false;
+    this.connectorFrom = this.connectorTo = "";
+    this.connectorDirection = "north";
+  }
+
+  chooseConnectorSource(id: string): void {
+    this.connectorFrom = id;
+    if (this.connectorTo === id) this.connectorTo = "";
+  }
+
+  addConnector(direction: string): void {
+    const selected = this.directions.find((value) => value === direction);
+    if (!this.canConnect || !this.connectorFrom || !this.connectorTo || !selected) return;
+    this.connectorDirection = selected;
+    this.connectRooms.emit({ fromId: this.connectorFrom, toId: this.connectorTo, direction: selected });
+  }
+
+  discardRoomDraft(): void {
+    if (!this.newRoom || this.saving || this.loading) return;
+    this.removeNewRoom.emit();
+    this.placementMessage = "Room draft removed.";
+    afterNextRender(() => {
+      const button = this.addRoomButton?.nativeElement;
+      if (button && !button.disabled) button.focus();
+      else this.viewport?.nativeElement.focus();
+    }, { injector: this.injector });
   }
 
   private get layoutKey(): string {
@@ -206,6 +263,11 @@ export class AreaRoomMapComponent implements OnChanges {
 
   clickRoomNode(id: string, event: MouseEvent): void {
     if (event.detail > 1) return;
+    if (this.connectorOpen) {
+      if (!this.connectorFrom) this.chooseConnectorSource(id);
+      else if (id !== this.connectorFrom && id !== unsavedRoomId) this.connectorTo = id;
+      return;
+    }
     const pointer = event.detail > 0;
     this.selectRoom(id, false, !pointer);
     this.editRoom.emit({ id, pointer });

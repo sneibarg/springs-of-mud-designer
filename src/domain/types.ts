@@ -7,7 +7,6 @@ export type {
   EditableValue,
   FeatureKind,
   FeatureStatus,
-  WorkQueueItem,
 } from "../types/common";
 export type {
   AreaView,

@@ -38,15 +38,6 @@ export type DesignerDraft = {
     notes: string;
 };
 
-export type WorkQueueItem = {
-    id: string;
-    title: string;
-    area: string;
-    resource: FeatureKind;
-    status: FeatureStatus;
-    owner: string;
-};
-
 export type ApiHealth = {
     state: "checking" | "online" | "offline";
     detail: string;

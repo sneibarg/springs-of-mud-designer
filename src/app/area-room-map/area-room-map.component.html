@@ -14,10 +14,45 @@
   @if (areaId) {
     <div class="room-palette" role="group" aria-label="Room palette">
       <strong class="map-kicker">Palette</strong>
-      <button class="primary-button" type="button" [disabled]="!canPlace" [draggable]="canPlace"
+      <button #addRoomButton class="primary-button" type="button" [disabled]="!canPlace" [draggable]="canPlace"
         (dragstart)="startRoomDrag($event)" (dragend)="draggingRoom = undefined" (click)="addRoom()">+ Add room</button>
-      <span class="map-muted">Drag onto the canvas or activate Add room to place it in an open spot.</span>
+      <button class="secondary-button" type="button" [disabled]="!canConnect && !connectorOpen"
+        [attr.aria-expanded]="connectorOpen" aria-controls="room-connector" (click)="toggleConnector()">Connector</button>
+      <span class="map-muted">Drag a room onto the canvas or choose Add room.</span>
     </div>
+    @if (connectorOpen) {
+      <section id="room-connector" class="map-toolbar connector-settings" aria-label="Room connector">
+        <p>Choose a source room, a saved destination, and a direction to add a one-way exit. Save the source room to keep it.</p>
+        <label>From
+          <select [ngModel]="connectorFrom" (ngModelChange)="chooseConnectorSource($event)">
+            <option value="">Choose source</option>
+            @for (room of roomOptions; track room.id) {
+              <option [value]="room.id">{{ room.vnum || 'Draft' }} · {{ room.name }}</option>
+            }
+          </select>
+        </label>
+        <label>To
+          <select [(ngModel)]="connectorTo">
+            <option value="">Choose destination</option>
+            @for (room of roomOptions; track room.id) {
+              @if (room.id !== unsavedRoomId && room.id !== connectorFrom) {
+                <option [value]="room.id">{{ room.vnum }} · {{ room.name }}</option>
+              }
+            }
+          </select>
+        </label>
+        <label>Direction
+          <select [(ngModel)]="connectorDirection">
+            @for (direction of directions; track direction) {
+              <option [value]="direction">{{ direction }}</option>
+            }
+          </select>
+        </label>
+        <button class="primary-button" type="button" [disabled]="!canConnect || !connectorFrom || !connectorTo"
+          (click)="addConnector(connectorDirection)">Add exit</button>
+        @if (connectorError) { <p class="field-error" role="alert">{{ connectorError }}</p> }
+      </section>
+    }
   }
   <p class="map-muted placement-status" role="status">{{ placementMessage }}</p>
 
@@ -79,11 +114,17 @@
               [attr.aria-label]="node.name + ', room ' + node.vnum" [title]="node.name"
               [style.left.px]="nodeX(node.id) - tile.width / 2" [style.top.px]="nodeY(node.id) - tile.height / 2"
               [style.width.px]="tile.width" [style.height.px]="tile.height" (click)="clickRoomNode(node.id, $event)"
-              (dblclick)="node.id !== unsavedRoomId && editResets.emit(node.id)"
+              (dblclick)="!connectorOpen && node.id !== unsavedRoomId && editResets.emit(node.id)"
               (dragstart)="startRoomDrag($event, node.id)" (dragend)="draggingRoom = undefined">
               <strong>{{ node.vnum || (node.id === unsavedRoomId ? 'Draft' : '—') }}</strong>
               <span>{{ node.name }}</span>
             </button>
+            @if (node.id === unsavedRoomId) {
+              <button type="button" class="remove-room-draft" aria-label="Discard room draft"
+                title="Discard room draft" [disabled]="saving || loading"
+                [style.left.px]="nodeX(node.id) + tile.width / 2" [style.top.px]="nodeY(node.id) - tile.height / 2"
+                (click)="discardRoomDraft()"><span aria-hidden="true">×</span></button>
+            }
           }
         </div>
       </div>
@@ -94,6 +135,8 @@
         <span class="map-muted">Vnum {{ room.vnum || 'unassigned' }}</span>
         <button class="secondary-button" type="button" [disabled]="saving || loading" (click)="editRoom.emit({ id: room.id })">Edit room fields</button>
         @if (room.id === unsavedRoomId) {
+          <button class="secondary-button" type="button" [disabled]="saving || loading"
+            (click)="discardRoomDraft()">Discard room draft</button>
           <p class="map-muted">Save this room to edit its resets.</p>
         } @else {
           <button class="secondary-button" type="button" [disabled]="saving || loading" (click)="editResets.emit(room.id)">Edit resets</button>

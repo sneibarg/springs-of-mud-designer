@@ -12,12 +12,12 @@ export function normalizeArea(area: AreaView): AreaView {
     name: area.name ?? "",
     vnum: area.vnum ?? "",
     suggestedLevelRange: area.suggestedLevelRange ?? "",
-    rooms: sortVnumStrings(area.rooms ?? []),
-    mobiles: sortVnumStrings(area.mobiles ?? []),
-    objects: sortVnumStrings(area.objects ?? []),
-    shops: sortVnumStrings(area.shops ?? []),
-    resets: sortVnumStrings(area.resets ?? []),
-    specials: sortVnumStrings(area.specials ?? []),
+    rooms: area.rooms ?? [],
+    mobiles: area.mobiles ?? [],
+    objects: area.objects ?? [],
+    shops: area.shops ?? [],
+    resets: area.resets ?? [],
+    specials: area.specials ?? [],
   };
 }
 
@@ -305,12 +305,6 @@ export function compareByVnumThenName(
       String(right.vnum ?? right.name ?? right.id ?? ""),
       undefined,
       { numeric: true, sensitivity: "base" },
-  );
-}
-
-export function sortVnumStrings(values: string[]) {
-  return [...values].sort((left, right) =>
-      compareByVnumThenName({ vnum: left, name: left }, { vnum: right, name: right }),
   );
 }
 

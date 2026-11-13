@@ -10,12 +10,11 @@ type GuardRecord = Record<string, EditableValue>;
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <section class="structured-field guard-list-editor" #guardList>
+    <details class="editor-disclosure" #guardList open>
+      <summary>Guards</summary>
+      <section class="structured-field" aria-label="Guards">
       <div class="structured-field-heading">
-        <div>
-          <strong>Guards</strong>
-          <span>{{ normalizedGuards.length }} ordered checks</span>
-        </div>
+        <div><strong>Guards</strong><span>{{ normalizedGuards.length }} ordered checks</span></div>
         <button class="secondary-button" type="button" (click)="addGuard()">Add Guard</button>
       </div>
 
@@ -105,7 +104,8 @@ type GuardRecord = Record<string, EditableValue>;
           </div>
         </article>
       </div>
-    </section>
+      </section>
+    </details>
   `,
 })
 export class GuardListComponent {

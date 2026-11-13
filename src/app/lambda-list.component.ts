@@ -14,6 +14,9 @@ type LambdaRow = { source: string };
         <button class="secondary-button" type="button" (click)="add()" [disabled]="readonly">Add Lambda</button>
       </div>
 
+      @if (rows.length > 1 && !readonly) {
+        <p class="lambda-order-hint">Drag lambdas to reorder, or press Alt+Up or Alt+Down in a lambda’s source field.</p>
+      }
       <div class="structured-list">
         @for (row of rows; track row; let index = $index) {
           <article class="guard-card" [draggable]="!readonly"
@@ -22,10 +25,6 @@ type LambdaRow = { source: string };
             <div class="lambda-card-heading">
               <strong>Lambda {{ index + 1 }}</strong>
               <div class="guard-card-actions">
-                <button class="secondary-button compact-button" type="button" (click)="move(row, index - 1)"
-                  [disabled]="readonly || index === 0" [attr.aria-label]="'Move lambda ' + (index + 1) + ' up'">Move up</button>
-                <button class="secondary-button compact-button" type="button" (click)="move(row, index + 1)"
-                  [disabled]="readonly || index === rows.length - 1" [attr.aria-label]="'Move lambda ' + (index + 1) + ' down'">Move down</button>
                 <button class="secondary-button compact-button" type="button" (click)="remove(index)"
                   [disabled]="readonly" [attr.aria-label]="'Remove lambda ' + (index + 1)">Remove</button>
               </div>
@@ -34,6 +33,8 @@ type LambdaRow = { source: string };
               <label>
                 Python source for lambda {{ index + 1 }}
                 <textarea [ngModel]="row.source" (ngModelChange)="updateSource(row, $event)" [disabled]="readonly"
+                  (keydown.alt.arrowup)="moveByKey($event, row, index - 1)"
+                  (keydown.alt.arrowdown)="moveByKey($event, row, index + 1)"
                   rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
               </label>
             </div>
@@ -45,15 +46,6 @@ type LambdaRow = { source: string };
     </section>
   `,
   styles: `
-    .structured-field-heading span {
-      display: block;
-    }
-    :host-context([data-theme="dark"]) .structured-field-heading span {
-      color: #aebeb3;
-    }
-    .structured-field-heading button {
-      white-space: nowrap;
-    }
     .lambda-card-heading {
       display: flex;
       flex-wrap: wrap;
@@ -109,6 +101,11 @@ export class LambdaListComponent implements OnChanges {
     this.rows.splice(to, 0, row);
     this.publish();
     this.focus(to);
+  }
+
+  moveByKey(event: Event, row: LambdaRow, to: number): void {
+    event.preventDefault();
+    this.move(row, to);
   }
 
   startDrag(event: DragEvent, row: LambdaRow): void {

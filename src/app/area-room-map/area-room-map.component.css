@@ -58,6 +58,11 @@
 .placement-status { margin: 6px 0 0; }
 .placement-status:empty { margin: 0; }
 .map-toolbar { margin: 12px 0; }
+.connector-settings > p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+}
 .map-toolbar label { display: flex; align-items: center; gap: 6px; font-size: 13px; max-width: 100%; }
 .map-toolbar select {
   min-width: 0;
@@ -146,6 +151,22 @@
 @starting-style { .room-node { opacity: 0; scale: .86; } }
 .room-node[aria-pressed="true"] { border-color: var(--map-accent); background: var(--map-selected); }
 .room-node.draft-node { border-style: dashed; }
+.remove-room-draft {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  transform: translate(-50%, -35%);
+  border: 1px solid var(--map-accent);
+  border-radius: 50%;
+  background: var(--map-panel);
+  color: var(--map-text);
+  font: 700 20px/1 sans-serif;
+}
+.remove-room-draft:hover { background: var(--map-selected); }
 .room-node:focus-visible { outline: 2px solid var(--map-accent); outline-offset: 2px; }
 .room-node span {
   display: -webkit-box;

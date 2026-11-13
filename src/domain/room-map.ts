@@ -1,10 +1,12 @@
 import { directionNames } from "./constants";
 import { parseSerializedExit } from "./logic";
+import type { ExitView } from "../types/views/ExitView";
 
 export type RoomDirection = typeof directionNames[number];
 export type RoomPosition = { x: number; y: number; floor: number };
 type Position = RoomPosition;
 export const unsavedRoomId = "new";
+export type RoomConnector = { fromId: string; toId: string; direction: RoomDirection };
 
 const steps: Record<RoomDirection, Position> = {
   north: { x: 0, y: -1, floor: 0 }, east: { x: 1, y: 0, floor: 0 },
@@ -32,6 +34,40 @@ function record(value: unknown): value is Record<string, unknown> {
 function reference(value: unknown): string {
   if (typeof value === "string") return value.trim();
   return typeof value === "number" && Number.isSafeInteger(value) ? String(value) : "";
+}
+
+export function appendRoomConnector(
+  exits: unknown, fromId: string, destination: { id: string; vnum: unknown }, direction: RoomDirection,
+): string[] {
+  const directionIndex = directionNames.indexOf(direction);
+  if (directionIndex < 0) throw new Error("Choose an exit direction.");
+  const destinationVnum = reference(destination.vnum);
+  if (!/^\d+$/.test(destinationVnum) || !Number.isSafeInteger(Number(destinationVnum))) {
+    throw new Error("The destination room needs a numeric vnum.");
+  }
+  if (exits != null && !Array.isArray(exits)) throw new Error("Correct the source room’s exits before adding a connector.");
+  const current: string[] = [];
+  for (const raw of exits ?? []) {
+    let parsed: unknown;
+    try {
+      if (typeof raw === "string") parsed = parseSerializedExit(raw);
+    } catch {
+      // The existing exit must be understood before a direction can be reserved.
+    }
+    if (typeof raw !== "string" || !record(parsed)
+      || !directionNames[Number(reference(parsed["direction"]) || -1)]) {
+      throw new Error("Correct the source room’s exits before adding a connector.");
+    }
+    if (Number(parsed["direction"]) === directionIndex) {
+      throw new Error(`This room already has an exit to the ${direction}. Choose another direction or edit the existing exit.`);
+    }
+    current.push(raw);
+  }
+  const exit: Omit<ExitView, "raw" | "parseError"> = {
+    direction: directionIndex, description: "", keyword: "", exit_flags: 0, key: -1,
+    to_room_vnum: Number(destinationVnum), to_room_id: destination.id, room_id: fromId,
+  };
+  return [...current, JSON.stringify(exit)];
 }
 
 export function buildRoomMap(records: readonly unknown[], draft?: unknown, newRoom?: Record<string, unknown>): RoomMapGraph {

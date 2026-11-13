@@ -160,6 +160,83 @@ test('Area builder: a failed room POST keeps the placed draft and retries with t
   assert.equal(app.createRequest.method, 'PUT');
 });
 
+test('Area builder: removing a placed room clears its draft without writing or removing saved rooms', async () => {
+  let writes = 0;
+  const app = appWith({ save: async () => { writes++; } });
+  app.activeKind = 'rooms';
+  app.selectedResourceAreaId = 'town';
+  const saved = { id: 'gate', areaId: 'town', vnum: '42', name: 'Gate' };
+  app.resourceDocuments = [saved];
+  await app.placeRoomOnMap({ x: 1, y: 0, floor: 0 });
+  app.updateResourceDraft({ ...app.resourceDraft, name: 'Draft room' });
+  app.updateFieldValidity(true);
+  app.removePlacedRoom();
+  assert.equal(app.canvasRoomDraft, undefined);
+  assert.equal(app.roomMapInspector, false);
+  assert.equal(app.isDirty, false);
+  assert.equal(app.fieldJsonInvalid, false);
+  assert.equal(app.resourceDraft.areaId, 'town');
+  assert.deepEqual(app.resourceDocuments, [saved]);
+  assert.equal(writes, 0);
+});
+
+test('Area builder: a connector appends a serialized exit and uses the draft room ID on save', async () => {
+  const writes = [];
+  const app = appWith({ save: async (_base, _proxy, _endpoint, payload) => {
+    writes.push(payload);
+    return payload;
+  } });
+  app.activeKind = 'rooms';
+  app.selectedResourceAreaId = 'town';
+  app.resourceDocuments = [{ id: 'gate', areaId: 'town', name: 'Gate', vnum: '0042' }];
+  const existingExit = "{'direction': 0, 'to_room_vnum': 10}";
+  await app.placeRoomOnMap({ x: 1, y: 0, floor: 0 });
+  app.updateResourceDraft({ ...app.resourceDraft, name: 'Court', vnum: '43', exits: [existingExit] });
+  const connector = { fromId: 'new', toId: 'gate', direction: 'east' };
+  await app.connectRooms(connector);
+  const [preserved, generated] = app.resourceDraft.exits;
+  assert.equal(preserved, existingExit);
+  assert.deepEqual(JSON.parse(generated), {
+    direction: 1, description: '', keyword: '', exit_flags: 0, key: -1,
+    to_room_vnum: 42, to_room_id: 'gate', room_id: app.createRequest.body.id,
+  });
+  assert.equal(buildRoomMap(app.resourceDocuments, undefined, app.canvasRoomDraft).get('new').exits[1].targetId, 'gate');
+  assert.equal(writes.length, 0);
+  await app.connectRooms(connector);
+  assert.match(app.roomConnectorError, /already has an exit to the east/);
+  assert.deepEqual(app.resourceDraft.exits, [preserved, generated]);
+  await app.saveActiveDocument();
+  assert.equal(writes[0].id, JSON.parse(generated).room_id);
+  assert.deepEqual(writes[0].exits, [preserved, generated]);
+});
+
+test('Areas: editing metadata hides relationship fields and preserves their values and order on PUT', async () => {
+  const relationships = {
+    rooms: ['20', '10'], mobiles: ['8', '2'], objects: ['5', '4'],
+    resets: ['reset-b', 'reset-a'], shops: ['7'], specials: ['6'],
+  };
+  let request;
+  const app = appWith({
+    list: async () => [{ id: 'town', name: 'Town', vnum: '100', ...relationships }],
+    save: async (_server, _proxy, endpoint, payload, existing) => {
+      request = { endpoint, payload, existing };
+      return payload;
+    },
+  });
+  app.activeKind = 'areas';
+  await app.loadActiveDocuments(false);
+  await app.selectResource('town');
+  assert.deepEqual(app.structuredFieldNames, ['id', 'author', 'name', 'vnum', 'suggestedLevelRange']);
+  app.updateResourceDraft({ ...app.resourceDraft, name: 'New Town' });
+  await app.saveActiveDocument();
+  assert.equal(request.endpoint, '/api/v1/areas/town');
+  assert.equal(request.existing, true);
+  assert.equal(request.payload.name, 'New Town');
+  for (const [key, expected] of Object.entries(relationships)) {
+    assert.deepEqual(request.payload[key], expected);
+  }
+});
+
 test('Area builder: a new area can open the canvas and carry its filter into each child editor', async () => {
   const endpoints = [];
   const app = appWith({

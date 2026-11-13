@@ -1,4 +1,4 @@
-import type { ApiResource, DesignerDraft, WorkQueueItem } from "./types/common";
+import type { ApiResource, DesignerDraft } from "./types/common";
 import { resourceIcons } from "./types/icons";
 
 export const apiResources: ApiResource[] = [
@@ -65,7 +65,7 @@ export const apiResources: ApiResource[] = [
     icon: resourceIcons.Castle,
     status: "Ready",
     summary: "Author-owned world containers that connect rooms, mobiles, objects, shops, resets, and specials.",
-    fields: ["author", "name", "vnum", "suggestedLevelRange", "rooms", "mobiles", "objects", "resets"],
+    fields: ["author", "name", "vnum", "suggestedLevelRange"],
   },
   {
     kind: "rooms",
@@ -257,38 +257,3 @@ export const initialDraft: DesignerDraft = {
   level: 12,
   notes: "Absorbs a small amount of fire damage and teaches low-level casters mitigation timing.",
 };
-
-export const workQueue: WorkQueueItem[] = [
-  {
-    id: "wf-1021",
-    title: "Finish offensive skill checks",
-    area: "Skills",
-    resource: "skills",
-    status: "Drafting",
-    owner: "Design",
-  },
-  {
-    id: "wf-1022",
-    title: "Map eastern marsh room exits",
-    area: "World",
-    resource: "rooms",
-    status: "Planned",
-    owner: "Builder",
-  },
-  {
-    id: "wf-1023",
-    title: "Normalize social message variants",
-    area: "Communication",
-    resource: "communication",
-    status: "Needs API",
-    owner: "Content",
-  },
-  {
-    id: "wf-1024",
-    title: "Review item wear flag editor",
-    area: "Items",
-    resource: "items",
-    status: "Drafting",
-    owner: "Design",
-  },
-];

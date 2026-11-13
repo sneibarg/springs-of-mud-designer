@@ -5,7 +5,7 @@ import { SomApiService } from "./api.service";
 import { GuardListComponent } from "./guard-list.component";
 import { AreaRoomMapComponent } from "./area-room-map/area-room-map.component";
 import { RoomResetDialogComponent } from "./room-reset-dialog/room-reset-dialog.component";
-import type { RoomPosition } from "../domain/room-map";
+import { appendRoomConnector, unsavedRoomId, type RoomConnector, type RoomPosition } from "../domain/room-map";
 import { LambdaListComponent } from "./lambda-list.component";
 import { ResourceFormComponent, type ResourceFormDocument } from "./resource-form.component";
 import { JsonPayloadEditorComponent } from "./json-payload-editor/json-payload-editor.component";
@@ -14,7 +14,7 @@ import { gameEditorRules } from "../domain/game-editor";
 import { commandJsonFields, commandJsonRules, skillJsonFields, skillJsonRules, spellJsonFields, spellJsonRules } from "../domain/ability-editor";
 import { mobileEditorRules, roomEditorRules, specialEditorRules } from "../domain/world-resource-editor";
 import { isJsonValue, validateJsonValue, type JsonEditorRules, type JsonEditorState } from "../domain/json-editor";
-import { apiResources, workQueue } from "../data";
+import { apiResources } from "../data";
 import {
   buildApiUrl,
   createContentDocumentId,
@@ -31,6 +31,7 @@ import {
   abilitiesNavItem,
   abilityChildNavItems,
   areaChildNavItems,
+  areaListFields,
   areaNavItem,
   editableResourceKinds,
   emptyAreaDraft,
@@ -89,7 +90,6 @@ export class AppComponent implements OnInit {
       : this.activeKind === "mobiles" ? "Mobile" : this.activeKind === "rooms" ? "Room" : "Item";
   }
   readonly apiResources = apiResources;
-  readonly workQueue = workQueue;
   readonly navItems = navItems;
   readonly areaNavItem = areaNavItem;
   readonly areaChildNavItems = areaChildNavItems;
@@ -101,6 +101,7 @@ export class AppComponent implements OnInit {
   roomMapVisible = false;
   roomMapLoadError = "";
   roomResetError = "";
+  roomConnectorError = "";
   roomMapInspector = false;
   pendingRoomPosition?: RoomPosition;
 
@@ -237,6 +238,55 @@ export class AppComponent implements OnInit {
     this.openCanvasRoomFields();
   }
 
+  removePlacedRoom(): void {
+    if (this.activeKind !== "rooms" || this.selectedResourceId !== "new"
+      || !this.pendingRoomPosition || this.resourceStatus !== "idle") return;
+    this.replaceDraft(this.newDraftForArea());
+    this.roomMapInspector = false;
+    this.resourceMessage = "";
+  }
+
+  async connectRooms({ fromId, toId, direction }: RoomConnector): Promise<void> {
+    if (this.activeKind !== "rooms" || this.resourceStatus !== "idle" || !this.selectedResourceAreaId) return;
+    this.roomConnectorError = "";
+    const areaId = this.selectedResourceAreaId;
+    const savedRoom = (id: string) => this.resourceDocuments.find((room) => room.id === id && room.areaId === areaId);
+    const sourceIsOpen = fromId === this.selectedResourceId;
+    const workspace = this.workspaceVersion;
+    if (!sourceIsOpen && this.isDirty &&
+      (!await this.canReplaceDraft() || workspace !== this.workspaceVersion || this.resourceStatus !== "idle")) return;
+    const destination = toId === unsavedRoomId ? undefined : savedRoom(toId);
+    const source = sourceIsOpen ? this.resourceDraft : savedRoom(fromId);
+    if (!destination?.id || !source || source.areaId !== areaId || fromId === toId
+      || (fromId === unsavedRoomId && !this.pendingRoomPosition)) {
+      this.roomConnectorError = "Choose two different rooms in this area. Save the destination room first.";
+      return;
+    }
+    if (sourceIsOpen && (this.fieldJsonInvalid || this.rawJsonError)) {
+      this.roomConnectorError = "Correct the errors in the room fields before adding a connector.";
+      return;
+    }
+    const sourceId = fromId === unsavedRoomId ? this.newDocumentId ?? createContentDocumentId() : fromId;
+    let exits: string[];
+    try {
+      exits = appendRoomConnector(source["exits"], sourceId, { id: destination.id, vnum: destination.vnum }, direction);
+    } catch (error) {
+      this.roomConnectorError = error instanceof Error ? error.message : "Could not add the connector.";
+      return;
+    }
+    if (!sourceIsOpen) {
+      this.invalidateWorkspace();
+      this.openResource(fromId);
+    }
+    if (fromId === unsavedRoomId) this.newDocumentId = sourceId;
+    // Reload the field editor from the updated draft so its form and JSON views agree.
+    this.editorIdentity++;
+    this.updateResourceDraft({ ...this.resourceDraft, exits });
+    this.roomMap?.selectRoom(fromId);
+    this.resourceMessage = `Added ${direction} exit. Save room to publish the connection.`;
+    this.openCanvasRoomFields();
+  }
+
   private openCanvasRoomFields(focus = true): void {
     this.roomMapInspector = true;
     this.changeDetector.markForCheck();
@@ -247,6 +297,7 @@ export class AppComponent implements OnInit {
     const areaId = this.selectedResourceId;
     if (this.activeKind !== "areas" || areaId === "new" || !await this.canReplaceDraft()) return;
     this.selectedResourceAreaId = areaId;
+    this.roomConnectorError = "";
     this.switchResourceKind("rooms");
   }
 
@@ -369,9 +420,16 @@ export class AppComponent implements OnInit {
 
   get structuredFieldNames(): string[] {
     const excludedFields = this.jsonEditorFields.map(({ key }) => key);
+    if (this.activeKind === "areas") excludedFields.push(...areaListFields);
     if (this.usesGuardCards()) excludedFields.push("guards");
     if (this.activeKind === "commands") excludedFields.push("lambdas");
     return this.activeFieldNames.filter((fieldName) => !excludedFields.includes(fieldName));
+  }
+
+  setEditorSectionsOpen(container: HTMLElement, open: boolean): void {
+    container.querySelectorAll<HTMLDetailsElement>("details.editor-disclosure").forEach((section) => {
+      section.open = open;
+    });
   }
 
   get activeResource(): ApiResource {
@@ -677,6 +735,7 @@ export class AppComponent implements OnInit {
     this.roomMapVisible = this.activeKind === "rooms";
     this.roomMapInspector = false;
     this.roomMapLoadError = "";
+    this.roomConnectorError = "";
     this.roomResetError = "";
     this.resourceDocuments = [];
     this.replaceDraft(this.newDraftForArea());

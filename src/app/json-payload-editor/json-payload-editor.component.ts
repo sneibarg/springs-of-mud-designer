@@ -1,5 +1,5 @@
 import { CommonModule } from "@angular/common";
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from "@angular/core";
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import type { EditableValue } from "../../types/common";
 import {
@@ -25,7 +25,9 @@ export class JsonPayloadEditorComponent implements OnChanges {
   @Input() requireObject = false;
   @Input() readOnlyPaths: readonly string[] = [];
   @Input() rules: JsonEditorRules = {};
+  @Input() sectionCard = false;
   @Output() stateChange = new EventEmitter<JsonEditorState>();
+  @ViewChild(JsonValueEditorComponent) private rootEditor?: JsonValueEditorComponent;
 
   readonly editorId = `json-editor-${nextEditorId++}`;
   mode: "form" | "json" = "form";
@@ -48,6 +50,12 @@ export class JsonPayloadEditorComponent implements OnChanges {
       || (this.mode === "json" && this.rawText !== JSON.stringify(this.baseline, null, 2));
   }
   get invalid(): boolean { return this.issues.length > 0; }
+
+  addSectionEntry(): void {
+    if (this.readonly || this.hasIncomingValue) return;
+    if (this.rules[""]?.itemEditor === "code") this.rootEditor?.addCodeEntry();
+    else this.rootEditor?.startAdd();
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes["documentKey"] || !this.root) {

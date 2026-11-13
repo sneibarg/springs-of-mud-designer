@@ -173,14 +173,10 @@
             <strong>{{ readyEditorCount }}</strong>
             <span>Ready editors</span>
           </div>
-          <div class="metric">
-            <strong>{{ workQueue.length }}</strong>
-            <span>Draft queue</span>
-          </div>
         </div>
       </section>
 
-      <section class="content-grid" [class.payload-workspace]="usesJsonPayloadEditor() || jsonEditorFields.length > 0">
+      <section class="content-grid" [class.payload-workspace]="activeKind === 'areas' || usesJsonPayloadEditor() || jsonEditorFields.length > 0">
         <div class="editor-surface">
           <div class="section-heading">
             <div>
@@ -246,7 +242,9 @@
               [draftInvalid]="fieldJsonInvalid || !!rawJsonError" [loading]="resourceStatus === 'loading'"
               [saving]="resourceStatus === 'saving'" [loadError]="roomMapLoadError" (editRoom)="editRoomFromMap($event.id, $event.pointer)"
               (editResets)="openRoomResets($event)"
-              (placeRoom)="placeRoomOnMap($event)" (moveNewRoom)="pendingRoomPosition = $event" />
+              (placeRoom)="placeRoomOnMap($event)" (moveNewRoom)="pendingRoomPosition = $event"
+              (removeNewRoom)="removePlacedRoom()" [connectorError]="roomConnectorError"
+              (connectRooms)="connectRooms($event)" />
             @if (roomMapVisible && roomResetError) {
               <p class="field-error" role="alert">{{ roomResetError }}</p>
             }
@@ -289,55 +287,69 @@
               <p *ngIf="!searchQuery && resourceDocuments.length === 0 && resourceStatus === 'idle'">No records loaded. Choose an area or use Reload.</p>
             </aside>
 
-            @if (usesJsonPayloadEditor()) {
-              <som-json-payload-editor #payloadEditor class="resource-payload-editor"
-                [value]="resourceDraft" [documentKey]="editorIdentity" [label]="payloadEditorLabel"
-                [requireObject]="true" [readOnlyPaths]="payloadReadOnlyPaths" [rules]="payloadEditorRules"
-                [readonly]="resourceStatus === 'saving'" (stateChange)="updatePayloadEditor($event, payloadEditor.documentKey)" />
-            }
-
-            <fieldset *ngIf="!usesJsonPayloadEditor()" class="structured-resource-editor editor-fieldset" [disabled]="!!rawJsonError || resourceStatus === 'saving'">
-              <legend>Structured fields</legend>
-              <p *ngIf="rawJsonError">Correct Raw JSON Payload to continue editing these fields.</p>
-              <som-resource-form
-                [draft]="resourceDraft"
-                [fieldNames]="structuredFieldNames"
-                [documentIdentity]="editorIdentity"
-                (invalidJsonChange)="updateFieldValidity($event)"
-                (draftChange)="updateResourceDraft($event)"
-              ></som-resource-form>
-              <div [class.ability-editor-sections]="jsonEditorFields.length > 0">
-                @for (field of jsonEditorFields; track field.key) {
+            <div #editorSections class="structured-resource-editor">
+              <div class="editor-disclosure-actions" role="group" aria-label="Editor sections">
+                <button class="secondary-button" type="button" (click)="setEditorSectionsOpen(editorSections, true)">Expand all</button>
+                <button class="secondary-button" type="button" (click)="setEditorSectionsOpen(editorSections, false)">Collapse all</button>
+              </div>
+              @if (usesJsonPayloadEditor()) {
+              <details class="editor-disclosure" open>
+                <summary>Structured fields</summary>
+                <som-json-payload-editor #payloadEditor
+                  [value]="resourceDraft" [documentKey]="editorIdentity" [label]="payloadEditorLabel"
+                  [requireObject]="true" [readOnlyPaths]="payloadReadOnlyPaths" [rules]="payloadEditorRules"
+                  [readonly]="resourceStatus === 'saving'" (stateChange)="updatePayloadEditor($event, payloadEditor.documentKey)" />
+              </details>
+              } @else {
+                <ng-template #abilityField let-field>
                   <som-json-payload-editor #fieldEditor [label]="field.label" [value]="jsonFieldValue(field.key)"
+                    [sectionCard]="field.key === 'payload' || field.key === 'lambdas'"
                     [documentKey]="editorIdentity" [requireObject]="field.rules[''].type === 'object'" [rules]="field.rules"
                     [readonly]="!!rawJsonError || resourceStatus === 'saving'"
                     (stateChange)="updateJsonField(field.key, $event, fieldEditor.documentKey)" />
+                </ng-template>
+                <details class="editor-disclosure" open>
+                  <summary>Structured fields</summary>
+                  <fieldset class="editor-fieldset" aria-label="Structured fields" [disabled]="!!rawJsonError || resourceStatus === 'saving'">
+                    <som-resource-form
+                      [draft]="resourceDraft"
+                      [fieldNames]="structuredFieldNames"
+                      [documentIdentity]="editorIdentity"
+                      (invalidJsonChange)="updateFieldValidity($event)"
+                      (draftChange)="updateResourceDraft($event)"
+                    />
+                    <div [class.ability-editor-sections]="jsonEditorFields.length > 0">
+                      @for (field of jsonEditorFields; track field.key) {
+                        @if (field.key !== 'payload' && field.key !== 'lambdas') {
+                          <ng-container *ngTemplateOutlet="abilityField; context: { $implicit: field }" />
+                        }
+                      }
+                    </div>
+                  </fieldset>
+                </details>
+                @for (field of jsonEditorFields; track field.key) {
+                  @if (field.key === 'payload' || field.key === 'lambdas') {
+                    <details class="editor-disclosure" open>
+                      <summary>{{ field.label }}</summary>
+                      <ng-container *ngTemplateOutlet="abilityField; context: { $implicit: field }" />
+                    </details>
+                  }
                 }
-                <som-guard-list *ngIf="usesGuardCards()" [guards]="resourceDraft['guards']"
-                  (guardsChange)="updateResourceGuards($event)" />
                 @if (activeKind === 'commands') {
-                  <som-lambda-list [lambdas]="resourceDraft['lambdas']"
-                    [readonly]="!!rawJsonError || resourceStatus === 'saving'"
-                    (lambdasChange)="updateResourceDraft({ ...resourceDraft, lambdas: $event })" />
+                  <details class="editor-disclosure" open>
+                    <summary>Lambdas</summary>
+                    <som-lambda-list [lambdas]="resourceDraft['lambdas']"
+                      [readonly]="!!rawJsonError || resourceStatus === 'saving'"
+                      (lambdasChange)="updateResourceDraft({ ...resourceDraft, lambdas: $event })" />
+                  </details>
                 }
-              </div>
-            </fieldset>
-
-            <label *ngIf="!usesJsonPayloadEditor()" class="json-editor-field raw-json-field">
-              <span>Raw JSON Payload</span>
-              <textarea
-                [ngModel]="resourceDraftText"
-                (ngModelChange)="updateRawJson($event)"
-                [disabled]="fieldJsonInvalid || resourceStatus === 'saving'"
-                [attr.aria-invalid]="rawJsonError ? 'true' : null"
-                [attr.aria-describedby]="rawJsonError ? 'raw-json-error' : 'raw-json-help'"
-                name="resourceDraftText"
-                spellcheck="false"
-                rows="12"
-              ></textarea>
-              <span id="raw-json-help">Valid JSON updates the structured fields. Correct invalid field JSON before editing here.</span>
-              <span *ngIf="rawJsonError" id="raw-json-error" class="field-error" role="alert">{{ rawJsonError }}</span>
-            </label>
+                @if (usesGuardCards()) {
+                  <fieldset class="editor-fieldset" [disabled]="!!rawJsonError || resourceStatus === 'saving'">
+                    <som-guard-list [guards]="resourceDraft['guards']" (guardsChange)="updateResourceGuards($event)" />
+                  </fieldset>
+                }
+              }
+            </div>
           </div>
 
           <div class="field-list">
@@ -385,7 +397,7 @@
               }
             }
           </details>
-        } @else {
+        } @else if (activeKind !== 'areas') {
         <aside class="inspector" [hidden]="roomMapVisible">
           <div class="section-heading compact">
             <div>
@@ -398,24 +410,6 @@
             [attr.aria-label]="jsonEditorFields.length > 0 ? activeResource.label + ' save request' : null">{{ createRequest | json }}</pre>
         </aside>
         }
-      </section>
-
-      <section class="queue-band">
-        <div class="section-heading">
-          <div>
-            <span>Authoring Flow</span>
-            <h3>Draft Queue</h3>
-          </div>
-        </div>
-        <div class="queue-table">
-          <div class="queue-row" *ngFor="let item of workQueue">
-            <span aria-hidden="true">OK</span>
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.area }}</span>
-            <span>{{ item.owner }}</span>
-            <span class="pill muted">{{ item.status }}</span>
-          </div>
-        </div>
       </section>
     </ng-template>
   </main>

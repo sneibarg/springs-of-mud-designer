@@ -1,6 +1,19 @@
-<section class="payload-editor" [attr.aria-label]="label + ' editor'">
+<section class="payload-editor" [class.structured-field]="sectionCard" [attr.aria-label]="label + ' editor'">
+  @if (sectionCard) {
+    <div class="structured-field-heading">
+      <div>
+        <strong>{{ label }}</strong>
+        @if (root?.type === 'array') { <span>{{ root?.children?.length }} ordered steps</span> }
+        @if (root?.type === 'object') { <span>{{ root?.children?.length }} properties</span> }
+      </div>
+      @if (mode === 'form' && (root?.type === 'object' || root?.type === 'array')) {
+        <button type="button" class="secondary-button" [disabled]="readonly || hasIncomingValue"
+          (click)="addSectionEntry()">{{ root?.type === 'array' ? 'Add Lambda' : 'Add Property' }}</button>
+      }
+    </div>
+  }
   <div class="payload-heading">
-    <h4>{{ label }}</h4>
+    @if (!sectionCard) { <h4>{{ label }}</h4> }
     <div class="mode-buttons" role="group" [attr.aria-label]="label + ' editing mode'">
       @if (mode === 'form') {
         <button type="button" class="secondary-button" [attr.aria-pressed]="showTools" (click)="showTools = !showTools">Field tools</button>
@@ -26,7 +39,8 @@
   }
   @if (mode === 'form' && root) {
     <som-json-value-editor [node]="root" [label]="label" [options]="options" [rule]="rules['']"
-      [showTools]="showTools" [readonly]="readonly || hasIncomingValue" (edited)="edited()" />
+      [showTools]="showTools" [readonly]="readonly || hasIncomingValue"
+      [showAddButton]="!sectionCard" (edited)="edited()" />
   }
   @if (mode === 'json') {
     <label class="payload-raw" [for]="editorId + '-raw'">{{ label }} JSON</label>
